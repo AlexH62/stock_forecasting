@@ -1,33 +1,99 @@
-import os
-import yfinance as yahooFinance
 import numpy as np
+import pandas as pd
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Run on CPU
+
 import tensorflow as tf
 import ltc_model as ltc
 from ctrnn_model import CTRNN, NODE, CTGRU
+import argparse
+import pandas as pd
 
-tf.compat.v1.disable_eager_execution()
+def read_file(filename):
+    df = pd.read_csv(filename)                                    
 
-def get_data(ticker, period="max"):
-    info = yahooFinance.Ticker(ticker)
+    data_x = np.stack([
+        df['Temperature'].values,
+        df['Humidity'].values,
+        df['Light'].values,
+        df['CO2'].values,
+        df['HumidityRatio'].values,
+        ],axis=-1)
+    data_y = df['Occupancy'].values.astype(np.int32)
+    return data_x,data_y
 
-    # Valid periods are 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, and max.
-    return info.history(period=period)
+def cut_in_sequences(x,y,seq_len,inc=1):
 
-class Model:
+    sequences_x = []
+    sequences_y = []
 
-    def __init__(self, model_type, model_size, sparsity_level=0.0, learning_rate = 0.001):
+    for s in range(0,x.shape[0] - seq_len,inc):
+        start = s
+        end = start+seq_len
+        sequences_x.append(x[start:end])
+        sequences_y.append(y[start:end])
+
+    return np.stack(sequences_x,axis=1),np.stack(sequences_y,axis=1)
+
+class OccupancyData:
+
+    def __init__(self,seq_len=16):
+        train_x,train_y = read_file("data/occupancy/datatraining.txt")
+        test0_x,test0_y = read_file("data/occupancy/datatest.txt")
+        test1_x,test1_y = read_file("data/occupancy/datatest2.txt")
+
+        mean_x = np.mean(train_x,axis=0)
+        std_x = np.std(train_x,axis=0)
+        train_x = (train_x-mean_x)/std_x
+        test0_x = (test0_x-mean_x)/std_x
+        test1_x = (test1_x-mean_x)/std_x
+
+        train_x,train_y = cut_in_sequences(train_x,train_y,seq_len)
+        test0_x,test0_y = cut_in_sequences(test0_x,test0_y,seq_len,inc=8)
+        test1_x,test1_y = cut_in_sequences(test1_x,test1_y,seq_len,inc=8)
+        print("Total number of training sequences: {}".format(train_x.shape[1]))
+        permutation = np.random.RandomState(893429).permutation(train_x.shape[1])
+        valid_size = int(0.1*train_x.shape[1])
+        print("Validation split: {}, training split: {}".format(valid_size,train_x.shape[1]-valid_size))
+
+        self.valid_x = train_x[:,permutation[:valid_size]]
+        self.valid_y = train_y[:,permutation[:valid_size]]
+        self.train_x = train_x[:,permutation[valid_size:]]
+        self.train_y = train_y[:,permutation[valid_size:]]
+
+        self.test_x = np.concatenate([test0_x,test1_x],axis=1)
+        self.test_y = np.concatenate([test0_y,test1_y],axis=1)
+        print("Total number of test sequences: {}".format(self.test_x.shape[1]))
+
+        
+
+    def iterate_train(self,batch_size=16):
+        total_seqs = self.train_x.shape[1]
+        permutation = np.random.permutation(total_seqs)
+        total_batches = total_seqs // batch_size
+
+        for i in range(total_batches):
+            start = i*batch_size
+            end = start + batch_size
+            batch_x = self.train_x[:,permutation[start:end]]
+            batch_y = self.train_y[:,permutation[start:end]]
+            yield (batch_x,batch_y)
+
+class OccupancyModel:
+
+    def __init__(self,model_type,model_size,sparsity_level=0.0,learning_rate = 0.001):
         self.model_type = model_type
         self.constrain_op = []
         self.sparsity_level = sparsity_level
-        self.x = tf.compat.v1.placeholder(dtype=tf.float32,shape=[None,None,5])
-        self.target_y = tf.compat.v1.placeholder(dtype=tf.int32,shape=[None,None])
+        self.x = tf.placeholder(dtype=tf.float32,shape=[None,None,5])
+        self.target_y = tf.placeholder(dtype=tf.int32,shape=[None,None])
 
         self.model_size = model_size
         head = self.x
         if(model_type == "lstm"):
-            self.fused_cell = tf.compat.v1.nn.rnn_cell.LSTMCell(model_size)
+            self.fused_cell = tf.nn.rnn_cell.LSTMCell(model_size)
 
-            head,_ = tf.compat.v1.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
+            head,_ = tf.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
         elif(model_type.startswith("ltc")):
             learning_rate = 0.005 # LTC needs a higher learning rate
             self.wm = ltc.LTCCell(model_size)
@@ -38,53 +104,53 @@ class Model:
             else:
                 self.wm._solver = ltc.ODESolver.SemiImplicit
 
-            head,_ = tf.compat.v1.nn.dynamic_rnn(self.wm,head,dtype=tf.float32,time_major=True)
+            head,_ = tf.nn.dynamic_rnn(self.wm,head,dtype=tf.float32,time_major=True)
             self.constrain_op.extend(self.wm.get_param_constrain_op())
         elif(model_type == "node"):
             self.fused_cell = NODE(model_size,cell_clip=-1)
-            head,_ = tf.compat.v1.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
+            head,_ = tf.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
         elif(model_type == "ctgru"):
             self.fused_cell = CTGRU(model_size,cell_clip=-1)
-            head,_ = tf.compat.v1.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
+            head,_ = tf.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
         elif(model_type == "ctrnn"):
             self.fused_cell = CTRNN(model_size,cell_clip=-1,global_feedback=True)
-            head,_ = tf.compat.v1.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
+            head,_ = tf.nn.dynamic_rnn(self.fused_cell,head,dtype=tf.float32,time_major=True)
         else:
             raise ValueError("Unknown model type '{}'".format(model_type))
 
         if(self.sparsity_level > 0):
             self.constrain_op.extend(self.get_sparsity_ops())
 
-        self.y = tf.compat.v1.layers.Dense(2,activation=None)(head)
+        self.y = tf.layers.Dense(2,activation=None)(head)
         print("logit shape: ",str(self.y.shape))
-        self.loss = tf.reduce_mean(tf.compat.v1.losses.sparse_softmax_cross_entropy(
+        self.loss = tf.reduce_mean(tf.losses.sparse_softmax_cross_entropy(
             labels = self.target_y,
             logits = self.y,
         ))
-        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate)
+        optimizer = tf.train.AdamOptimizer(learning_rate)
         self.train_step = optimizer.minimize(self.loss)
 
         model_prediction = tf.argmax(input=self.y, axis=2)
         self.accuracy = tf.reduce_mean(tf.cast(tf.equal(model_prediction, tf.cast(self.target_y,tf.int64)), tf.float32))
 
-        self.sess = tf.compat.v1.InteractiveSession()
-        self.sess.run(tf.compat.v1.global_variables_initializer())
+        self.sess = tf.InteractiveSession()
+        self.sess.run(tf.global_variables_initializer())
 
-        self.result_file = os.path.join("results","test","{}_{}_{:02d}.csv".format(model_type,model_size,int(100*self.sparsity_level)))
-        if(not os.path.exists("results/test")):
-            os.makedirs("results/test")
+        self.result_file = os.path.join("results","occupancy","{}_{}_{:02d}.csv".format(model_type,model_size,int(100*self.sparsity_level)))
+        if(not os.path.exists("results/occupancy")):
+            os.makedirs("results/occupancy")
         if(not os.path.isfile(self.result_file)):
             with open(self.result_file,"w") as f:
                 f.write("best epoch, train loss, train accuracy, valid loss, valid accuracy, test loss, test accuracy\n")
 
-        self.checkpoint_path = os.path.join("tf_sessions","test","{}".format(model_type))
-        if(not os.path.exists("tf_sessions/test")):
-            os.makedirs("tf_sessions/test")
+        self.checkpoint_path = os.path.join("tf_sessions","occupancy","{}".format(model_type))
+        if(not os.path.exists("tf_sessions/occupancy")):
+            os.makedirs("tf_sessions/occupancy")
             
-        self.saver = tf.compat.v1.train.Saver()
+        self.saver = tf.train.Saver()
 
     def get_sparsity_ops(self):
-        tf_vars = tf.compat.v1.trainable_variables()
+        tf_vars = tf.trainable_variables()
         op_list = []
         for v in tf_vars:
             # print("Variable {}".format(str(v)))
@@ -102,7 +168,7 @@ class Model:
         
     def sparse_var(self,v,sparsity_level):
         mask = np.random.choice([0, 1], size=v.shape, p=[sparsity_level,1-sparsity_level]).astype(np.float32)
-        v_assign_op = tf.compat.v1.assign(v,v*mask)
+        v_assign_op = tf.assign(v,v*mask)
         print("Var[{}] will be sparsified with {:0.2f} sparsity level".format(
             v.name,sparsity_level
         ))
@@ -170,9 +236,21 @@ class Model:
             test_loss,test_acc
         ))
 
+if __name__ == "__main__":
 
 
-model = Model(model_type = "ltc_rk",model_size=32)
-data = get_data("AMZN")
-model.fit(data, epochs=200)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model',default="lstm")
+    parser.add_argument('--log',default=1,type=int)
+    parser.add_argument('--size',default=32,type=int)
+    parser.add_argument('--epochs',default=200,type=int)
+    parser.add_argument('--sparsity',default=0.0,type=float)
+
+    args = parser.parse_args()
+
+
+    occ_data = OccupancyData()
+    model = OccupancyModel(model_type = args.model,model_size=args.size,sparsity_level=args.sparsity)
+
+    model.fit(occ_data,epochs=args.epochs,log_period=args.log)
 
