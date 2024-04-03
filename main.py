@@ -13,13 +13,15 @@ for ticker in TICKER:
 
 	N_FEATURES = 1
 	STEPS = 30
+	LOOKAHEAD = 20
+
 	preprocessor = Preprocessor()
 	scaled = preprocessor.scale(data)
-	X_train, y_train, X_test, y_test = preprocessor.sequence(scaled, STEPS)
+	X_train, y_train, X_test, y_test = preprocessor.sequence(scaled, STEPS, lookahead=LOOKAHEAD)
 
 	models = Models()
-	name, model = models.LTC(50, STEPS, N_FEATURES)
-	model.fit(X_train, y_train, epochs=200, shuffle=False)
+	name, model = models.Transformer(10, STEPS, N_FEATURES)
+	model.fit(X_train, y_train, epochs=100)
 
 	y_hat = model.predict(X_test)
 
@@ -29,7 +31,12 @@ for ticker in TICKER:
 
 	metrics = Metrics()
 	rmse = metrics.print_RMSE(unscaled_actual, unscaled_prediction)
-	metrics.plot(unscaled_train, unscaled_actual, unscaled_prediction, name, ticker)
+	metrics.plot(unscaled_train, unscaled_actual, unscaled_prediction, name, ticker, LOOKAHEAD)
 	rmses.append(rmse)
 
 print(rmses)
+file = open("dump.txt", "a")
+file.write(name + "\n")
+for val in rmses:
+	file.write(str(round(val, 4)) + "\n")
+file.close()

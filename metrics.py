@@ -10,7 +10,7 @@ class Metrics:
     print(rmse)
     return rmse
 
-  def plot(self, y_train, y_test, y_hat, model_type, ticker):
+  def plot(self, y_train, y_test, y_hat, model_type, ticker, lookahead):
     x = np.linspace(0, len(y_train)-1, len(y_train))
     x_test = np.linspace(len(y_train), len(y_train) + len(y_test)-1, len(y_test))
 
@@ -19,5 +19,5 @@ class Metrics:
     plt.plot(x_test, y_hat, label="predicted")
     plt.legend(loc="upper left")
     plt.title(model_type + " " + ticker)
-    plt.savefig("figs/" + model_type + "/" + ticker)
+    plt.savefig("figs/" + model_type + "/lookahead_" + str(lookahead) + "/" + ticker)
     plt.close()

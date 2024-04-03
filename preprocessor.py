@@ -20,16 +20,17 @@ class Preprocessor:
       return train, test
     return np.append(train, test)
 
-  def sequence(self, sequence, n_steps, train_test_split=0.8):
+  def sequence(self, sequence, n_steps, lookahead=1, train_test_split=0.8):
     X, y = [], []
 
     for i in range(len(sequence)):
       end_ix = i + n_steps
+      y_ix = end_ix + lookahead - 1
       
-      if end_ix > len(sequence)-1:
+      if y_ix > len(sequence)-1:
         break
       
-      seq_x, seq_y = sequence[i:end_ix], sequence[end_ix]
+      seq_x, seq_y = sequence[i:end_ix], sequence[y_ix]
       X.append(seq_x)
       y.append(seq_y)
 

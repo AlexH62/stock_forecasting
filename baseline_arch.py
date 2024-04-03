@@ -15,13 +15,16 @@ for ticker in TICKER:
   data = repository.get_data(ticker, PERIOD)
 
   STEPS = 30
+  LOOKAHEAD = 20
+  
   preprocessor = Preprocessor()
-  _, y_train, _, y_test = preprocessor.sequence(data, STEPS)
+  _, y_train, _, y_test_clean = preprocessor.sequence(data, STEPS)
+  _, _, _, y_test = preprocessor.sequence(data, STEPS, lookahead=LOOKAHEAD)
 
   y_hat_all = []
 
   for i in range(len(y_test)):
-    y_train_iterate = np.append(y_train, y_test[:i])
+    y_train_iterate = np.append(y_train, y_test_clean[:i])
     arima_model_fitted = pmdarima.auto_arima(y_train_iterate)
     arima_residuals = arima_model_fitted.arima_res_.resid
 
@@ -30,7 +33,7 @@ for ticker in TICKER:
     garch_fitted = garch.fit()
 
     # Use ARIMA to predict mu
-    predicted_mu = arima_model_fitted.predict(n_periods=1)
+    predicted_mu = arima_model_fitted.predict(n_periods=LOOKAHEAD)[-1]
     # Use GARCH to predict the residual
     garch_forecast = garch_fitted.forecast(horizon=1)
     predicted_et = garch_forecast.mean['h.1'].iloc[-1]
@@ -42,7 +45,12 @@ for ticker in TICKER:
 
   metrics = Metrics()
   rmse = metrics.print_RMSE(y_test, y_hat_all)
-  metrics.plot(y_train, y_test, y_hat_all, "GARCH", ticker)
+  metrics.plot(y_train, y_test, y_hat_all, "GARCH", ticker, LOOKAHEAD)
   rmses.append(rmse)
 
 print(rmses)
+file = open("dump.txt", "a")
+file.write("GARCH \n")
+for val in rmses:
+	file.write(str(round(val, 4)) + "\n")
+file.close()
