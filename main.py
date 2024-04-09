@@ -3,7 +3,7 @@ from preprocessor import Preprocessor
 from models import Models
 from metrics import Metrics
 
-TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
+TICKER = ["MS"]#"NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 PERIOD = "1y"
 
 rmses = []
@@ -13,14 +13,14 @@ for ticker in TICKER:
 
 	N_FEATURES = 1
 	STEPS = 30
-	LOOKAHEAD = 20
+	LOOKAHEAD = 1
 
 	preprocessor = Preprocessor()
 	scaled = preprocessor.scale(data)
 	X_train, y_train, X_test, y_test = preprocessor.sequence(scaled, STEPS, lookahead=LOOKAHEAD)
 
 	models = Models()
-	name, model = models.Transformer(10, STEPS, N_FEATURES)
+	name, model = models.LSTM(5, STEPS, N_FEATURES)
 	model.fit(X_train, y_train, epochs=100)
 
 	y_hat = model.predict(X_test)
