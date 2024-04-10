@@ -1,56 +1,49 @@
-from repository import Repository
-from preprocessor import Preprocessor
-from metrics import Metrics
+import repository
+import preprocessor
+import metrics
+
 from arch import arch_model
 import pmdarima
 import numpy as np
 
-TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
+TICKER = ["MS"]#["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 PERIOD = "1y"
 
 rmses = []
 
 for ticker in TICKER:
-  repository = Repository()
-  data = repository.get_data(ticker, PERIOD)
+    data = repository.get_data(ticker, PERIOD)
+    train, test = preprocessor.split(data)
 
-  STEPS = 30
-  LOOKAHEAD = 20
-  
-  preprocessor = Preprocessor()
-  _, y_train, _, y_test_clean = preprocessor.sequence(data, STEPS)
-  _, _, _, y_test = preprocessor.sequence(data, STEPS, lookahead=LOOKAHEAD)
+    y_hat_all = []
 
-  y_hat_all = []
+    for i in range(len(test)):
+        y_train_iterate = np.append(train, test[:i])
+        arima_model_fitted = pmdarima.auto_arima(y_train_iterate)
+        arima_residuals = arima_model_fitted.arima_res_.resid
 
-  for i in range(len(y_test)):
-    y_train_iterate = np.append(y_train, y_test_clean[:i])
-    arima_model_fitted = pmdarima.auto_arima(y_train_iterate)
-    arima_residuals = arima_model_fitted.arima_res_.resid
+        # fit a GARCH(1,1) model on the residuals of the ARIMA model
+        garch = arch_model(arima_residuals, p=1, q=1)
+        garch_fitted = garch.fit(disp=False)
 
-    # fit a GARCH(1,1) model on the residuals of the ARIMA model
-    garch = arch_model(arima_residuals, p=1, q=1)
-    garch_fitted = garch.fit()
+        # Use ARIMA to predict mu
+        predicted_mu = arima_model_fitted.predict(n_periods=1)[-1]
+        # Use GARCH to predict the residual
+        garch_forecast = garch_fitted.forecast(horizon=1)
+        predicted_et = garch_forecast.mean['h.1'].iloc[-1]
+        # Combine both models' output: yt = mu + et
+        prediction = predicted_mu + predicted_et
 
-    # Use ARIMA to predict mu
-    predicted_mu = arima_model_fitted.predict(n_periods=LOOKAHEAD)[-1]
-    # Use GARCH to predict the residual
-    garch_forecast = garch_fitted.forecast(horizon=1)
-    predicted_et = garch_forecast.mean['h.1'].iloc[-1]
-    # Combine both models' output: yt = mu + et
-    prediction = predicted_mu + predicted_et
+        y_hat_all = np.append(y_hat_all, prediction)
+        print(len(test) - i)
 
-    y_hat_all = np.append(y_hat_all, prediction)
-    print(len(y_test) - i)
-
-  metrics = Metrics()
-  rmse = metrics.print_RMSE(y_test, y_hat_all)
-  metrics.plot(y_train, y_test, y_hat_all, "GARCH", ticker, LOOKAHEAD)
-  rmses.append(rmse)
+    rmse = metrics.print_RMSE(test, y_hat_all)
+    metrics.plot(train, test, y_hat_all, "GARCH", ticker, 1)
+    rmses.append(rmse)
 
 print(rmses)
 file = open("dump.txt", "a")
 file.write("GARCH \n")
 for val in rmses:
-	file.write(str(round(val, 4)) + "\n")
+    file.write(str(round(val, 4)) + "\n")
 file.close()
