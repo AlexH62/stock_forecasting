@@ -1,42 +1,43 @@
-from repository import Repository
-from preprocessor import Preprocessor
-from models import Models
-from metrics import Metrics
+import repository
+import preprocessor
+import metrics
+
+import keras
+from models.gru import GRU
+from models.lstm import LSTM
+from models.ltc import LTC
+from models.transformer import Transformer
+from sklearn.preprocessing import MinMaxScaler
+
+keras.utils.set_random_seed(42)
 
 TICKER = ["MS"]#"NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 PERIOD = "1y"
 
 rmses = []
 for ticker in TICKER:
-	repository = Repository()
-	data = repository.get_data(ticker, PERIOD)
+    data = repository.get_data(ticker, PERIOD)
+    scaler = MinMaxScaler()
 
-	N_FEATURES = 1
-	STEPS = 30
-	LOOKAHEAD = 1
+    train, test = preprocessor.split(data)
 
-	preprocessor = Preprocessor()
-	scaled = preprocessor.scale(data)
-	X_train, y_train, X_test, y_test = preprocessor.sequence(scaled, STEPS, lookahead=LOOKAHEAD)
+    scaled_train = scaler.fit_transform(train.reshape(-1, 1))
+    scaled_test = scaler.transform(test.reshape(-1, 1))
 
-	models = Models()
-	name, model = models.LSTM(5, STEPS, N_FEATURES)
-	model.fit(X_train, y_train, epochs=100)
+    model = LTC()
+    model.fit(scaled_train, 10, 150)
 
-	y_hat = model.predict(X_test)
+    predictions = model.predict(scaled_test)
 
-	unscaled_train = preprocessor.reverse_transform(y_train)
-	unscaled_actual = preprocessor.reverse_transform(y_test)
-	unscaled_prediction = preprocessor.reverse_transform(y_hat)
+    unscaled_prediction = scaler.inverse_transform(predictions.reshape(-1, 1))
 
-	metrics = Metrics()
-	rmse = metrics.print_RMSE(unscaled_actual, unscaled_prediction)
-	metrics.plot(unscaled_train, unscaled_actual, unscaled_prediction, name, ticker, LOOKAHEAD)
-	rmses.append(rmse)
+    rmse = metrics.print_RMSE(test, unscaled_prediction)
+    metrics.plot(train, test, unscaled_prediction, model.name, ticker, 1)
+    rmses.append(rmse)
 
 print(rmses)
 file = open("dump.txt", "a")
-file.write(name + "\n")
+file.write(model.name + "\n")
 for val in rmses:
-	file.write(str(round(val, 4)) + "\n")
+    file.write(str(round(val, 4)) + "\n")
 file.close()

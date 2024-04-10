@@ -1,52 +1,24 @@
-from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 
-class Preprocessor:
-  def __init__(self):
-    self.scaler = MinMaxScaler(feature_range=(0, 1))
+def split(data, train_test_split=0.7):
+    split_idx = int(train_test_split * len(data))
+    return data[:split_idx], data[split_idx:]
 
-  def reverse_transform(self, data):
-    return self.scaler.inverse_transform(data.reshape(-1, 1))
-  
-  def scale(self, data, train_test_split=0.8, return_split=False):
-    assert train_test_split <= 1
-    assert train_test_split > 0
+def sequence(data, lookback, lookahead=1):
+    x, y = [], []
 
-    train_samples = int(train_test_split * data.shape[0])
-    train = self.scaler.fit_transform(data[:train_samples].reshape(-1, 1)).squeeze()
-    test = self.scaler.transform(data[train_samples:].reshape(-1, 1)).squeeze()
+    for i in range(len(data)):
+        end_ix = i + lookback
+        y_ix = end_ix + lookahead - 1
+        
+        if y_ix > len(data)-1:
+            break
+        
+        seq_x, seq_y = data[i:end_ix], data[y_ix]
+        x.append(seq_x)
+        y.append(seq_y)
 
-    if return_split:
-      return train, test
-    return np.append(train, test)
+    x, y = np.array(x), np.array(y)
+    x = x.reshape((x.shape[0], x.shape[1], 1))
 
-  def sequence(self, sequence, n_steps, lookahead=1, train_test_split=0.8):
-    X, y = [], []
-
-    for i in range(len(sequence)):
-      end_ix = i + n_steps
-      y_ix = end_ix + lookahead - 1
-      
-      if y_ix > len(sequence)-1:
-        break
-      
-      seq_x, seq_y = sequence[i:end_ix], sequence[y_ix]
-      X.append(seq_x)
-      y.append(seq_y)
-
-    X, y = np.array(X), np.array(y)
-    X = X.reshape((X.shape[0], X.shape[1], 1))
-
-    train_samples = int(train_test_split * X.shape[0])
-    X_train = X[:train_samples]
-    y_train = y[:train_samples]
-
-    X_test = X[train_samples:]
-    y_test = y[train_samples:]
-
-    return X_train, y_train, X_test, y_test
-
-  
-
-
-
+    return x, y
