@@ -24,8 +24,10 @@ for ticker in TICKER:
     scaled_train = scaler.fit_transform(train.reshape(-1, 1))
     scaled_test = scaler.transform(test.reshape(-1, 1))
 
-    model = LTC()
-    model.fit(scaled_train, 10, 150)
+    # Change model here
+    model = Transformer()
+
+    model.fit(scaled_train, 10, 100)
 
     predictions = model.predict(scaled_test)
 

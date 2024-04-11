@@ -12,6 +12,9 @@ class LTC(Model):
         self.name = "LTC"
 
     def fit(self, train, neurons, epochs, lookback=30):
+        self.train = train
+        self.lookback = lookback
+        
         x, y = sequence(train, lookback)
         
         wiring = wirings.AutoNCP(neurons, 1)
@@ -24,4 +27,6 @@ class LTC(Model):
         self.model.fit(x, y, epochs=epochs)
 
     def predict(self, x):
-        return self.model.predict(x)
+        extended_data = np.append(self.train[-self.lookback:], x)
+        inp, _ = sequence(extended_data, self.lookback, 1)
+        return self.model.predict(inp)
