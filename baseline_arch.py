@@ -13,7 +13,7 @@ rmses = []
 
 for ticker in TICKER:
     data = repository.get_data(ticker, PERIOD)
-    train, test = preprocessor.split(data)
+    train, test = preprocessor.split(data, validation=False)
 
     y_hat_all = []
 

@@ -5,7 +5,7 @@ class Model(ABC):
         pass
 
     @abstractmethod
-    def fit(self, train, neurons, epochs):
+    def fit(self, train, val=None, neurons=None, epochs=None):
         pass
 
     @abstractmethod

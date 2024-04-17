@@ -8,7 +8,7 @@ class GRU(Model):
     def __init__(self):
         self.name = "GRU"
 
-    def fit(self, train, neurons, epochs):
+    def fit(self, train, val=None, neurons=10, epochs=200):
         batch_size = 1
         self.train = train
 
@@ -17,14 +17,25 @@ class GRU(Model):
         x = np.reshape(x, (len(x), 1, 1))
         y = np.reshape(y, (len(y), 1, 1))
 
+        if val is not None:
+            x_val = val[:-1]
+            y_val = val[1:]
+            x_val = np.reshape(x_val, (len(x_val), 1, 1))
+            y_val = np.reshape(y_val, (len(y_val), 1, 1))
+
         self.model = Sequential()
         self.model.add(keras.layers.GRU(neurons, batch_input_shape=(batch_size, x.shape[1], x.shape[2]), stateful=True))
         self.model.add(keras.layers.Dense(y.shape[1]))
         self.model.compile(optimizer="adam", loss='mse')
 
-        for i in range(epochs):
-            self.model.fit(x, y, epochs=1, batch_size=batch_size, shuffle=False)
-            self.model.reset_states()
+        if val is not None:
+            for i in range(epochs):
+                self.model.fit(x, y, validation_data=(x_val, y_val), epochs=1, batch_size=batch_size, shuffle=False)
+                self.model.reset_states()
+        else:
+            for i in range(epochs):
+                self.model.fit(x, y, epochs=1, batch_size=batch_size, shuffle=False)
+                self.model.reset_states()
     
     def predict(self, data):
         # Check training has been done

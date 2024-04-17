@@ -11,7 +11,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 keras.utils.set_random_seed(42)
 
-TICKER = ["MS"]#"NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
+TICKER = ["^N225"]#["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 PERIOD = "1y"
 
 rmses = []
@@ -19,15 +19,16 @@ for ticker in TICKER:
     data = repository.get_data(ticker, PERIOD)
     scaler = MinMaxScaler()
 
-    train, test = preprocessor.split(data)
+    train, val, test = preprocessor.split(data)
 
     scaled_train = scaler.fit_transform(train.reshape(-1, 1))
+    scaled_val = scaler.transform(val.reshape(-1, 1))
     scaled_test = scaler.transform(test.reshape(-1, 1))
 
     # Change model here
-    model = Transformer()
+    model = LTC()
 
-    model.fit(scaled_train, 10, 100)
+    model.fit(scaled_train, val=scaled_val, neurons=4, epochs=200)
 
     predictions = model.predict(scaled_test)
 

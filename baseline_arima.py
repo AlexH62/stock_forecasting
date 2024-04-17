@@ -5,13 +5,13 @@ import metrics
 import pmdarima
 import numpy as np
 
-TICKER = ["MS"]#, "NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
+TICKER = ["^N225"]#["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 PERIOD = "1y"
 
 rmses = []
 for ticker in TICKER:
     data = repository.get_data(ticker, PERIOD)
-    train, test = preprocessor.split(data)
+    train, test = preprocessor.split(data, validation=False)
 
     y_hat_all = []
 
