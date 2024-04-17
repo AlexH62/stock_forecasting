@@ -6,6 +6,21 @@ def print_RMSE(actual, predicted):
     print(rmse)
     return rmse
 
+def print_MAE(actual, predicted):
+    mae = np.sum(np.abs(actual - predicted)) / len(actual)
+    print(mae)
+    return mae
+
+def print_MAPE(actual, predicted):
+    mape = np.sum(np.abs(np.divide(actual - predicted, actual))) / len(actual)
+    print(mape)
+    return mape
+
+def print_R2(actual, predicted):
+    r2 = 1 - (np.sum(np.square(actual - predicted)) / np.sum(np.square(actual - np.mean(actual))))
+    print(r2)
+    return r2
+
 def plot(y_train, y_test, y_hat, model_type, ticker, lookahead):
     x = np.linspace(0, len(y_train)-1, len(y_train))
     x_test = np.linspace(len(y_train), len(y_train) + len(y_test)-1, len(y_test))
