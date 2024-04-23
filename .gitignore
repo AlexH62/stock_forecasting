@@ -3,3 +3,4 @@ log/
 figs/
 __pycache__/
 *.txt
+*.csv

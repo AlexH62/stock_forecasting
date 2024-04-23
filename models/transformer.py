@@ -60,13 +60,13 @@ class Transformer(Model):
 
         self.model = self.__build_model(
             input_shape = x.shape[1:],
-            head_size=256,
+            head_size=128,
             num_heads=4,
             ff_dim=4,
             num_transformer_blocks=neurons,
-            mlp_units=[128],
-            mlp_dropout=0.4,
-            dropout=0.25,
+            mlp_units=[64],
+            mlp_dropout=0.2,
+            dropout=0.1,
         )
 
         self.model.compile(
@@ -82,7 +82,7 @@ class Transformer(Model):
                 y,
                 validation_data=(x_val, y_val),
                 epochs=epochs,
-                batch_size=64,
+                batch_size=32,
                 #callbacks=callbacks,
             )
         else:
@@ -90,7 +90,7 @@ class Transformer(Model):
                 x,
                 y,
                 epochs=epochs,
-                batch_size=64,
+                batch_size=32,
                 #callbacks=callbacks,
             )
 

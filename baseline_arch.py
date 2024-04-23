@@ -6,10 +6,14 @@ from arch import arch_model
 import pmdarima
 import numpy as np
 
-TICKER = ["MS"]#["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
+#TICKER = ["^N225"]
+TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 PERIOD = "1y"
 
 rmses = []
+maes = []
+mapes = []
+r2s = []
 
 for ticker in TICKER:
     data = repository.get_data(ticker, PERIOD)
@@ -38,12 +42,19 @@ for ticker in TICKER:
         print(len(test) - i)
 
     rmse = metrics.print_RMSE(test, y_hat_all)
-    metrics.plot(train, test, y_hat_all, "GARCH", ticker, 1)
-    rmses.append(rmse)
+    mae = metrics.print_MAE(test, y_hat_all)
+    mape = metrics.print_MAPE(test, y_hat_all)
+    r2 = metrics.print_R2(test, y_hat_all)
 
-print(rmses)
-file = open("dump.txt", "a")
-file.write("GARCH \n")
-for val in rmses:
-    file.write(str(round(val, 4)) + "\n")
+    rmses.append(rmse)
+    maes.append(mae)
+    mapes.append(mape)
+    r2s.append(r2)
+    
+    metrics.plot(train, test, y_hat_all, "GARCH", ticker, 10)
+
+file = open("dump.csv", "a")
+file.write("GARCH,MAE,MAPE,RMSE,R2\n")
+for i, ticker in enumerate(TICKER):
+    file.write(ticker + "," + str(round(maes[i], 4)) + "," + str(round(mapes[i], 4)) + "," + str(round(rmses[i], 4)) + "," + str(round(r2s[i], 4)) + "\n")
 file.close()

@@ -2,13 +2,13 @@ import numpy as np
 
 def split(data, train_test_split=0.7, validation=True):
     split_idx = int(train_test_split * len(data))
+    val_split = (1 - train_test_split) / 2
+    val_idx = int(val_split * len(data))
 
     if validation:
-        val_split = (1 - train_test_split) / 2
-        val_idx = int(val_split * len(data))
         return data[:split_idx], data[split_idx:split_idx + val_idx], data[split_idx + val_idx:]
     
-    return data[:split_idx], data[split_idx:]
+    return data[:split_idx + val_idx], data[split_idx + val_idx:]
 
 def sequence(data, lookback, lookahead=1):
     x, y = [], []

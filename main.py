@@ -3,21 +3,27 @@ import preprocessor
 import metrics
 
 import keras
+import numpy as np
 from models.gru import GRU
 from models.lstm import LSTM
 from models.ltc import LTC
 from models.transformer import Transformer
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 
 keras.utils.set_random_seed(42)
 
-TICKER = ["^N225"]#["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
+#TICKER = ["^N225"]
+TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 PERIOD = "1y"
 
 rmses = []
+maes = []
+mapes = []
+r2s = []
+
 for ticker in TICKER:
     data = repository.get_data(ticker, PERIOD)
-    scaler = MinMaxScaler()
+    scaler = RobustScaler()
 
     train, val, test = preprocessor.split(data)
 
@@ -26,21 +32,29 @@ for ticker in TICKER:
     scaled_test = scaler.transform(test.reshape(-1, 1))
 
     # Change model here
-    model = LTC()
+    model = GRU()
 
-    model.fit(scaled_train, val=scaled_val, neurons=4, epochs=200)
+    model.fit(scaled_train, val=scaled_val, neurons=4, epochs=100)
 
     predictions = model.predict(scaled_test)
 
-    unscaled_prediction = scaler.inverse_transform(predictions.reshape(-1, 1))
+    unscaled_prediction = scaler.inverse_transform(predictions.reshape(-1, 1)).squeeze()
 
     rmse = metrics.print_RMSE(test, unscaled_prediction)
-    metrics.plot(train, test, unscaled_prediction, model.name, ticker, 1)
-    rmses.append(rmse)
+    mae = metrics.print_MAE(test, unscaled_prediction)
+    mape = metrics.print_MAPE(test, unscaled_prediction)
+    r2 = metrics.print_R2(test, unscaled_prediction)
 
-print(rmses)
-file = open("dump.txt", "a")
-file.write(model.name + "\n")
-for val in rmses:
-    file.write(str(round(val, 4)) + "\n")
+    rmses.append(rmse)
+    maes.append(mae)
+    mapes.append(mape)
+    r2s.append(r2)
+
+    train_val = np.append(train, val)
+    metrics.plot(train_val, test, unscaled_prediction, model.name, ticker, 10)
+
+file = open("dump.csv", "a")
+file.write(model.name + ",MAE,MAPE,RMSE,R2\n")
+for i, ticker in enumerate(TICKER):
+    file.write(ticker + "," + str(round(maes[i], 4)) + "," + str(round(mapes[i], 4)) + "," + str(round(rmses[i], 4)) + "," + str(round(r2s[i], 4)) + "\n")
 file.close()
