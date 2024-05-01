@@ -7,11 +7,10 @@ import torch
 import warnings
 import keras
 import numpy as np
-from models.temp import Transformer
 from models.gru import GRU
 from models.lstm import LSTM
 from models.ltc import LTC
-#from models.transformer import Transformer
+from models.transformer import Transformer
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 
 keras.utils.set_random_seed(42)

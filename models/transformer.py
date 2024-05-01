@@ -1,103 +1,158 @@
 from models.model import Model
+from models.transformer_backbone import Transformer_Base
 from preprocessor import sequence
 
-import keras
+import torch
 import numpy as np
-from keras import layers
+from torch.utils.data import Dataset, DataLoader
+from torch import optim
+from torch.optim import lr_scheduler 
+import torch.nn as nn
+
+class My_Dataset(Dataset):
+    def __init__(self, data, pred_len, seq_len, label_len):
+        self.data = data
+        self.seq_len = seq_len
+        self.pred_len = pred_len
+        self.label_len = label_len
+
+        self.marks = torch.ones(len(data))
+    
+    def __len__(self):
+        return len(self.data) - self.seq_len - self.pred_len + 1
+    
+    def __getitem__(self, index):
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        seq_x = self.data[s_begin:s_end]
+        seq_y = self.data[r_begin:r_end]
+        seq_x_mark = self.marks[s_begin:s_end]
+        seq_y_mark = self.marks[r_begin:r_end]
+
+        return seq_x, seq_y, seq_x_mark.float(), seq_y_mark.float()
 
 class Transformer(Model):
     def __init__(self):
         self.name = "Transformer"
 
-    def __transformer_encoder(self, inputs, head_size, num_heads, ff_dim, dropout=0):
-        # Attention and Normalization
-        x = layers.MultiHeadAttention(
-            key_dim=head_size, num_heads=num_heads, dropout=dropout
-        )(inputs, inputs)
-        x = layers.Dropout(dropout)(x)
-        x = layers.LayerNormalization(epsilon=1e-6)(x)
-        res = x + inputs
-
-        # Feed Forward Part
-        x = layers.Conv1D(filters=ff_dim, kernel_size=1, activation="relu")(res)
-        x = layers.Dropout(dropout)(x)
-        x = layers.Conv1D(filters=inputs.shape[-1], kernel_size=1)(x)
-        x = layers.LayerNormalization(epsilon=1e-6)(x)
-        return x + res
-    
-    def __build_model(
-            self,
-            input_shape,
-            head_size,
-            num_heads,
-            ff_dim,
-            num_transformer_blocks,
-            mlp_units,
-            dropout=0,
-            mlp_dropout=0,
-        ):
-            inputs = keras.Input(shape=input_shape)
-            x = inputs
-            for _ in range(num_transformer_blocks):
-                x = self.__transformer_encoder(x, head_size, num_heads, ff_dim, dropout)
-
-            x = layers.GlobalAveragePooling1D(data_format="channels_last")(x)
-            for dim in mlp_units:
-                x = layers.Dense(dim, activation="relu")(x)
-                x = layers.Dropout(mlp_dropout)(x)
-            outputs = layers.Dense(1, activation="relu")(x)
-            return keras.Model(inputs, outputs)
-
     def fit(self, train, val=None, neurons=10, epochs=200, lookback=30):
         self.train = train
-        self.val = val
         self.lookback = lookback
+        if val is not None:
+            self.val = val
 
-        x, y = sequence(train, lookback)
+        self.config = {
+            "pred_len":1,
+            "output_attention":False,
+            "embed_type":0, # 0: default 1: value embedding + temporal embedding + positional embedding 2: value embedding + temporal embedding 3: value embedding + positional embedding 4: value embedding
+            "enc_in":1,
+            "dec_in":1,
+            "d_model":512,
+            "embed":"timeF", # time features encoding, options:[timeF, fixed, learned]
+            "freq":"b", # business days
+            "dropout":0.05,
+            "factor":1,
+            "n_heads":8,
+            "d_ff":2048,
+            "activation":"gelu",
+            "e_layers":2, # encoder layers
+            "d_layers":1,
+            "c_out":1,
+            "label_len":1, # 1?
+            "features": "S", # M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate
+            "seq_len":lookback
+        }
+
+        train_dataset = My_Dataset(train, self.config["pred_len"], lookback, self.config["seq_len"])
+        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
         if val is not None:
             extended_val = np.append(self.train[-self.lookback:], val)
-            x_val, y_val = sequence(extended_val, lookback)
+            val_dataset = My_Dataset(extended_val, self.config["pred_len"], lookback, self.config["seq_len"])
+            val_loader = DataLoader(val_dataset, batch_size=32, shuffle=True)
 
-        self.model = self.__build_model(
-            input_shape = x.shape[1:],
-            head_size=128,
-            num_heads=4,
-            ff_dim=4,
-            num_transformer_blocks=neurons,
-            mlp_units=[64],
-            mlp_dropout=0.2,
-            dropout=0.1,
-        )
+        self.model = Transformer_Base(self.config).float()
+        
+        train_steps = len(train_loader)
+        self.criterion = nn.MSELoss()
+        model_optim = optim.Adam(self.model.parameters(), lr=0.0001)
+        scheduler = lr_scheduler.OneCycleLR(optimizer = model_optim,
+                                            steps_per_epoch = train_steps,
+                                            pct_start = 0.3,
+                                            epochs = epochs,
+                                            max_lr = 0.0001)
 
-        self.model.compile(
-            loss="mse",
-            optimizer=keras.optimizers.Adam(learning_rate=1e-4)
-        )
+        for epoch in range(epochs):
+            train_loss = []
+            self.model.train()
+            for i, (batch_x, batch_y, x_pos, y_pos) in enumerate(train_loader):
+                batch_x = batch_x.float()
+                batch_y = batch_y.float()
 
-        #callbacks = [keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)]
+                model_optim.zero_grad()
+                dec_inp = torch.zeros_like(batch_y[:, -self.config["pred_len"]:]).float()
+                dec_inp = torch.cat([batch_y[:, :self.config["pred_len"]], dec_inp], dim=1).float()
 
-        if val is not None:
-            self.model.fit(
-                x,
-                y,
-                validation_data=(x_val, y_val),
-                epochs=epochs,
-                batch_size=32,
-                #callbacks=callbacks,
-            )
-        else:
-            self.model.fit(
-                x,
-                y,
-                epochs=epochs,
-                batch_size=32,
-                #callbacks=callbacks,
-            )
+                outputs = self.model(batch_x, x_pos, dec_inp, y_pos, batch_y)
+                outputs = outputs[:, -self.config["pred_len"]:, 0:]
+                batch_y = batch_y[:, -self.config["pred_len"]:, 0:]
+                loss = self.criterion(outputs, batch_y)
+                train_loss.append(loss.item())
+                loss.backward()
+                model_optim.step()
+            train_loss = np.average(train_loss)
+            vali_loss = self.vali(val_loader)
+            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
+                epoch + 1, train_steps, train_loss, vali_loss))
+            
+        return self.model
+    
+    def vali(self, val_loader):
+        total_loss = []
+        self.model.eval()
+        with torch.no_grad():
+            for i, (batch_x, batch_y, x_pos, y_pos) in enumerate(val_loader):
+                batch_x = batch_x.float().unsqueeze(2)
+                batch_y = batch_y.float().unsqueeze(2)
+
+                dec_inp = torch.zeros_like(batch_y[:, -self.config["pred_len"]:])
+                dec_inp = torch.cat([batch_y[:, :self.config["pred_len"]], dec_inp], dim=1)
+                
+                outputs = self.model(batch_x, x_pos, dec_inp, y_pos)
+                outputs = outputs[:, -self.config["pred_len"]:, 0:]
+                batch_y = batch_y[:, -self.config["pred_len"]:, 0:]
+
+                pred = outputs.detach().cpu()
+                true = batch_y.detach().cpu()
+
+                loss = self.criterion(pred, true)
+
+                total_loss.append(loss)
+        total_loss = np.average(total_loss)
+        self.model.train()
+        return total_loss
 
     def predict(self, x):
         if self.val is not None:
             extended_data = np.append(self.val[-self.lookback:], x)
         else:
             extended_data = np.append(self.train[-self.lookback:], x)
-        inp, _ = sequence(extended_data, self.lookback, 1)
-        return self.model.predict(inp)
+
+        test_dataset = My_Dataset(extended_data, self.config["pred_len"], self.lookback, self.config["seq_len"])
+        test_loader = DataLoader(test_dataset, batch_size=32, shuffle=True)
+
+        outputs = []
+        self.model.eval()
+        with torch.no_grad():
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
+                batch_x = batch_x.float().unsqueeze(2)
+                batch_y = batch_y.float().unsqueeze(2)
+
+                dec_inp = torch.zeros_like(batch_y[:, -self.config["pred_len"]:])
+                dec_inp = torch.cat([batch_y[:, :self.config["pred_len"]], dec_inp], dim=1)
+
+                outputs.append(self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark))
+
+        return torch.cat(outputs)
