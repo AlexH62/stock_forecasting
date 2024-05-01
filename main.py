@@ -2,18 +2,27 @@ import repository
 import preprocessor
 import metrics
 
+import random
+import torch
+import warnings
 import keras
 import numpy as np
+from models.temp import Transformer
 from models.gru import GRU
 from models.lstm import LSTM
 from models.ltc import LTC
-from models.transformer import Transformer
+#from models.transformer import Transformer
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 
 keras.utils.set_random_seed(42)
+random.seed(42)
+torch.manual_seed(42)
+np.random.seed(42)
 
-#TICKER = ["^N225"]
-TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
+warnings.filterwarnings('ignore')
+
+TICKER = ["^N225"]
+#TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 PERIOD = "1y"
 
 rmses = []
@@ -32,9 +41,9 @@ for ticker in TICKER:
     scaled_test = scaler.transform(test.reshape(-1, 1))
 
     # Change model here
-    model = GRU()
+    model = Transformer()
 
-    model.fit(scaled_train, val=scaled_val, neurons=4, epochs=100)
+    model.fit(scaled_train, val=scaled_val, neurons=1, epochs=1)
 
     predictions = model.predict(scaled_test)
 
@@ -51,7 +60,7 @@ for ticker in TICKER:
     r2s.append(r2)
 
     train_val = np.append(train, val)
-    metrics.plot(train_val, test, unscaled_prediction, model.name, ticker, 10)
+    metrics.plot(train_val, test, unscaled_prediction, model.name, ticker, 1)
 
 file = open("dump.csv", "a")
 file.write(model.name + ",MAE,MAPE,RMSE,R2\n")

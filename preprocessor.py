@@ -26,5 +26,6 @@ def sequence(data, lookback, lookahead=1):
 
     x, y = np.array(x), np.array(y)
     x = x.reshape((x.shape[0], x.shape[1], 1))
+    y = y.reshape((y.shape[0], 1))
 
     return x, y
