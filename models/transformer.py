@@ -1,5 +1,5 @@
 from models.model import Model
-from models.transformer_backbone import Transformer_Base
+from models.transformer_utils import Transformer_Base
 from preprocessor import sequence
 
 import torch
@@ -16,7 +16,7 @@ class My_Dataset(Dataset):
         self.pred_len = pred_len
         self.label_len = label_len
 
-        self.marks = torch.ones(len(data))
+        self.marks = torch.arange(0, len(data)).float()
     
     def __len__(self):
         return len(self.data) - self.seq_len - self.pred_len + 1
@@ -32,7 +32,7 @@ class My_Dataset(Dataset):
         seq_x_mark = self.marks[s_begin:s_end]
         seq_y_mark = self.marks[r_begin:r_end]
 
-        return seq_x, seq_y, seq_x_mark.float(), seq_y_mark.float()
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
 
 class Transformer(Model):
     def __init__(self):
@@ -47,18 +47,17 @@ class Transformer(Model):
         self.config = {
             "pred_len":1,
             "output_attention":False,
-            "embed_type":0, # 0: default 1: value embedding + temporal embedding + positional embedding 2: value embedding + temporal embedding 3: value embedding + positional embedding 4: value embedding
             "enc_in":1,
             "dec_in":1,
-            "d_model":512,
+            "d_model":128,
             "embed":"timeF", # time features encoding, options:[timeF, fixed, learned]
             "freq":"b", # business days
-            "dropout":0.05,
+            "dropout":0.1,
             "factor":1,
             "n_heads":8,
-            "d_ff":2048,
+            "d_ff":256,
             "activation":"gelu",
-            "e_layers":2, # encoder layers
+            "e_layers":neurons, # encoder layers
             "d_layers":1,
             "c_out":1,
             "label_len":1, # 1?
@@ -77,12 +76,12 @@ class Transformer(Model):
         
         train_steps = len(train_loader)
         self.criterion = nn.MSELoss()
-        model_optim = optim.Adam(self.model.parameters(), lr=0.0001)
+        model_optim = optim.Adam(self.model.parameters(), lr=1e-6)
         scheduler = lr_scheduler.OneCycleLR(optimizer = model_optim,
                                             steps_per_epoch = train_steps,
                                             pct_start = 0.3,
                                             epochs = epochs,
-                                            max_lr = 0.0001)
+                                            max_lr = 0.01)
 
         for epoch in range(epochs):
             train_loss = []
@@ -92,8 +91,8 @@ class Transformer(Model):
                 batch_y = batch_y.float()
 
                 model_optim.zero_grad()
-                dec_inp = torch.zeros_like(batch_y[:, -self.config["pred_len"]:]).float()
-                dec_inp = torch.cat([batch_y[:, :self.config["pred_len"]], dec_inp], dim=1).float()
+                dec_inp = torch.zeros_like(batch_y[:, -self.config["pred_len"]:, :]).float()
+                dec_inp = torch.cat([batch_y[:, :self.config["pred_len"], :], dec_inp], dim=1).float()
 
                 outputs = self.model(batch_x, x_pos, dec_inp, y_pos, batch_y)
                 outputs = outputs[:, -self.config["pred_len"]:, 0:]
@@ -102,6 +101,10 @@ class Transformer(Model):
                 train_loss.append(loss.item())
                 loss.backward()
                 model_optim.step()
+                #lr = scheduler.get_last_lr()[0]
+                #for param_group in model_optim.param_groups:
+                #    param_group['lr'] = lr
+                #scheduler.step()
             train_loss = np.average(train_loss)
             vali_loss = self.vali(val_loader)
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
@@ -155,4 +158,4 @@ class Transformer(Model):
 
                 outputs.append(self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark))
 
-        return torch.cat(outputs)
+        return torch.cat(outputs).numpy()

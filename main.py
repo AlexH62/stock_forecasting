@@ -7,10 +7,12 @@ import torch
 import warnings
 import keras
 import numpy as np
-from models.gru import GRU
-from models.lstm import LSTM
-from models.ltc import LTC
+from models.gru import GRU # 2, 50
+from models.lstm import LSTM # 5, 50
+from models.ltc import LTC # 50, 100
 from models.transformer import Transformer
+from models.patchTST import PatchTST
+from models.node import NODE # 5, 50
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 
 keras.utils.set_random_seed(42)
@@ -20,7 +22,18 @@ np.random.seed(42)
 
 warnings.filterwarnings('ignore')
 
-TICKER = ["^N225"]
+class Scaler():
+    def __init__(self):
+        pass
+
+    def fit_transform(self, data):
+        return data
+    def transform(self, data):
+        return data
+    def inverse_transform(self, data):
+        return data
+
+TICKER = ["GOOG"]
 #TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 PERIOD = "1y"
 
@@ -42,7 +55,7 @@ for ticker in TICKER:
     # Change model here
     model = Transformer()
 
-    model.fit(scaled_train, val=scaled_val, neurons=1, epochs=1)
+    model.fit(scaled_train, val=scaled_val, neurons=1, epochs=200)
 
     predictions = model.predict(scaled_test)
 

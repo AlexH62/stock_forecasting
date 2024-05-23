@@ -2,5 +2,8 @@ env/
 log/
 figs/
 __pycache__/
-*.txt
+venv/
+lightning_logs/
+
 *.csv
+*.txt

@@ -15,20 +15,6 @@ class TriangularCausalMask():
     def mask(self):
         return self._mask
 
-
-class ProbMask():
-    def __init__(self, B, H, L, index, scores, device="cpu"):
-        _mask = torch.ones(L, scores.shape[-1], dtype=torch.bool).to(device).triu(1)
-        _mask_ex = _mask[None, None, :].expand(B, H, L, scores.shape[-1])
-        indicator = _mask_ex[torch.arange(B)[:, None, None],
-                    torch.arange(H)[None, :, None],
-                    index, :].to(device)
-        self._mask = indicator.view(scores.shape).to(device)
-
-    @property
-    def mask(self):
-        return self._mask
-
 class PositionalEmbedding(nn.Module):
     def __init__(self, d_model, max_len=5000):
         super(PositionalEmbedding, self).__init__()
@@ -62,7 +48,6 @@ class TokenEmbedding(nn.Module):
     def forward(self, x):
         x = self.tokenConv(x.permute(0, 2, 1)).transpose(1, 2)
         return x
-
 
 class FixedEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
@@ -141,52 +126,6 @@ class DataEmbedding(nn.Module):
         x = self.value_embedding(x) 
         + self.temporal_embedding(x_mark) 
         + self.position_embedding(x)
-        return self.dropout(x)
-
-
-class DataEmbedding_wo_pos(nn.Module):
-    def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1):
-        super(DataEmbedding_wo_pos, self).__init__()
-
-        self.value_embedding = TokenEmbedding(c_in=c_in, d_model=d_model)
-        self.position_embedding = PositionalEmbedding(d_model=d_model)
-        self.temporal_embedding = TemporalEmbedding(d_model=d_model, embed_type=embed_type,
-                                                    freq=freq) if embed_type != 'timeF' else TimeFeatureEmbedding(
-            d_model=d_model, embed_type=embed_type, freq=freq)
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, x, x_mark):
-        x = self.value_embedding(x) + self.temporal_embedding(x_mark)
-        return self.dropout(x)
-
-class DataEmbedding_wo_pos_temp(nn.Module):
-    def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1):
-        super(DataEmbedding_wo_pos_temp, self).__init__()
-
-        self.value_embedding = TokenEmbedding(c_in=c_in, d_model=d_model)
-        self.position_embedding = PositionalEmbedding(d_model=d_model)
-        self.temporal_embedding = TemporalEmbedding(d_model=d_model, embed_type=embed_type,
-                                                    freq=freq) if embed_type != 'timeF' else TimeFeatureEmbedding(
-            d_model=d_model, embed_type=embed_type, freq=freq)
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, x, x_mark):
-        x = self.value_embedding(x)
-        return self.dropout(x)
-
-class DataEmbedding_wo_temp(nn.Module):
-    def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1):
-        super(DataEmbedding_wo_temp, self).__init__()
-
-        self.value_embedding = TokenEmbedding(c_in=c_in, d_model=d_model)
-        self.position_embedding = PositionalEmbedding(d_model=d_model)
-        self.temporal_embedding = TemporalEmbedding(d_model=d_model, embed_type=embed_type,
-                                                    freq=freq) if embed_type != 'timeF' else TimeFeatureEmbedding(
-            d_model=d_model, embed_type=embed_type, freq=freq)
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, x, x_mark):
-        x = self.value_embedding(x) + self.position_embedding(x)
         return self.dropout(x)
 
 class FullAttention(nn.Module):
@@ -367,33 +306,10 @@ class Transformer_Base(nn.Module):
         self.pred_len = configs["pred_len"]
         self.output_attention = configs["output_attention"]
 
-        # Embedding
-        if configs["embed_type"] == 0:
-            self.enc_embedding = DataEmbedding(configs["enc_in"], configs["d_model"], configs["embed"], configs["freq"],
+        self.enc_embedding = DataEmbedding(configs["enc_in"], configs["d_model"], configs["embed"], configs["freq"],
                                             configs["dropout"])
-            self.dec_embedding = DataEmbedding(configs["dec_in"], configs["d_model"], configs["embed"], configs["freq"],
+        self.dec_embedding = DataEmbedding(configs["dec_in"], configs["d_model"], configs["embed"], configs["freq"],
                                            configs["dropout"])
-        elif configs["embed_type"] == 1:
-            self.enc_embedding = DataEmbedding(configs["enc_in"], configs["d_model"], configs["embed"], configs["freq"],
-                                                    configs["dropout"])
-            self.dec_embedding = DataEmbedding(configs["dec_in"], configs["d_model"], configs["embed"], configs["freq"],
-                                                    configs["dropout"])
-        elif configs["embed_type"] == 2:
-            self.enc_embedding = DataEmbedding_wo_pos(configs["enc_in"], configs["d_model"], configs["embed"], configs["freq"],
-                                                    configs["dropout"])
-            self.dec_embedding = DataEmbedding_wo_pos(configs["dec_in"], configs["d_model"], configs["embed"], configs["freq"],
-                                                    configs["dropout"])
-
-        elif configs["embed_type"] == 3:
-            self.enc_embedding = DataEmbedding_wo_temp(configs["enc_in"], configs["d_model"], configs["embed"], configs["freq"],
-                                                    configs["dropout"])
-            self.dec_embedding = DataEmbedding_wo_temp(configs["dec_in"], configs["d_model"], configs["embed"], configs["freq"],
-                                                    configs["dropout"])
-        elif configs["embed_type"] == 4:
-            self.enc_embedding = DataEmbedding_wo_pos_temp(configs["enc_in"], configs["d_model"], configs["embed"], configs["freq"],
-                                                    configs["dropout"])
-            self.dec_embedding = DataEmbedding_wo_pos_temp(configs["dec_in"], configs["d_model"], configs["embed"], configs["freq"],
-                                                    configs["dropout"])
         # Encoder
         self.encoder = Encoder(
             [

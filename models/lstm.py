@@ -18,6 +18,7 @@ class LSTM(Model):
         y = np.reshape(y, (len(y), 1, 1))
 
         if val is not None:
+            self.val = val
             x_val = val[:-1]
             y_val = val[1:]
             x_val = np.reshape(x_val, (len(x_val), 1, 1))
@@ -43,7 +44,10 @@ class LSTM(Model):
 
         # Initialise state with training data
         preds = []
-        self.model.predict(np.reshape(self.train, (len(self.train), 1, 1)))
+        self.model.predict(np.reshape(self.train, (len(self.train), 1, 1)), batch_size=1)
+
+        if hasattr(self, "val"):
+            self.model.predict(np.reshape(self.val, (len(self.val), 1, 1)), batch_size=1)
 
         # Predict stepwise
         for i in data:
