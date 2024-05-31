@@ -1,38 +1,87 @@
 from models.model import Model
-from models.transformer_utils import Transformer_Base
 from preprocessor import sequence
 
-import torch
 import numpy as np
-from torch.utils.data import Dataset, DataLoader
-from torch import optim
-from torch.optim import lr_scheduler 
-import torch.nn as nn
+from keras.backend import bias_add
+from keras.layers import Layer, MultiHeadAttention, Conv1D, LayerNormalization, Dropout, Dense, GlobalAveragePooling1D
+from keras.activations import leaky_relu
+from keras.optimizers import Adam
+from keras.callbacks import ReduceLROnPlateau
+from keras.models import Sequential, Model as KerasModel
 
-class My_Dataset(Dataset):
-    def __init__(self, data, pred_len, seq_len, label_len):
-        self.data = data
-        self.seq_len = seq_len
-        self.pred_len = pred_len
-        self.label_len = label_len
+class PositionalEmbedding(Layer):
+    def __init__(self, length):
+        super(PositionalEmbedding, self).__init__()
+        self.length = length
 
-        self.marks = torch.arange(0, len(data)).float()
+    def build(self, inputs_shape):
+        feature_size = inputs_shape[-1]
+        self.position_embeddings = self.add_weight(
+            shape=[self.length, feature_size],
+            initializer='glorot_uniform',
+            trainable=True,
+        )
+        self.built = True
     
-    def __len__(self):
-        return len(self.data) - self.seq_len - self.pred_len + 1
+    def call(self, inputs):
+        return bias_add(inputs, self.position_embeddings)
+
+class TransformerEncoder(Layer):
+    def __init__(self, heads, key_dim, ff_dim, dropout):
+        super(TransformerEncoder, self).__init__()
+        self.attn = MultiHeadAttention(heads, key_dim, dropout=dropout)
+        self.attn_dropout = Dropout(dropout)
+        self.attn_norm = LayerNormalization(epsilon=1e-6)
+        self.ff1 = Conv1D(filters=ff_dim, kernel_size=1, activation=leaky_relu)
+        self.ff2 = Conv1D(filters=ff_dim, kernel_size=1, activation=leaky_relu)
+        self.ff_dropout = Dropout(dropout)
+        self.ff_norm = LayerNormalization(epsilon=1e-6)
+
+    def call(self, inputs, training):
+        residual = x = inputs
+        x = self.attn_norm(x)
+        x = self.attn(query=x, key=x, value=x, training=training)
+        x = self.attn_dropout(x, training=training)
+        x = x + residual
+        
+        residual = x
+        x = self.ff_norm(x)
+        x = self.ff1(x)
+        x = self.ff_dropout(x, training=training)
+        x = self.ff2(x)
+
+        return x + residual
     
-    def __getitem__(self, index):
-        s_begin = index
-        s_end = s_begin + self.seq_len
-        r_begin = s_end - self.label_len
-        r_end = r_begin + self.label_len + self.pred_len
+class KerasTransformer(KerasModel):
+    def __init__(self, sequence_length, enc_layers, heads, key_dim, ff_dim, mlp_units, dropout=0.05):
+        super(KerasTransformer, self).__init__()
+        self.dropout = dropout
+        self.pos_emb = PositionalEmbedding(sequence_length)
+        self.encoders = [
+            TransformerEncoder(
+                heads=heads,
+                key_dim=key_dim,
+                ff_dim=ff_dim,
+                dropout=dropout,
+            ) for _ in range(enc_layers)
+        ]
+        self.ffs = [
+            Dense(dim) for dim in mlp_units
+        ]
+        self.pool = GlobalAveragePooling1D(data_format="channels_first")
+        self.output_ff = Dense(1)
 
-        seq_x = self.data[s_begin:s_end]
-        seq_y = self.data[r_begin:r_end]
-        seq_x_mark = self.marks[s_begin:s_end]
-        seq_y_mark = self.marks[r_begin:r_end]
+    def call(self, inputs):
+        encoded =  self.pos_emb(inputs)
 
-        return seq_x, seq_y, seq_x_mark, seq_y_mark
+        for layer in self.encoders:
+            encoded = layer(encoded)
+
+        x = self.pool(encoded)
+        for layer in self.ffs:
+            x = layer(x)
+            
+        return self.output_ff(x)
 
 class Transformer(Model):
     def __init__(self):
@@ -44,118 +93,37 @@ class Transformer(Model):
         if val is not None:
             self.val = val
 
-        self.config = {
-            "pred_len":1,
-            "output_attention":False,
-            "enc_in":1,
-            "dec_in":1,
-            "d_model":128,
-            "embed":"timeF", # time features encoding, options:[timeF, fixed, learned]
-            "freq":"b", # business days
-            "dropout":0.1,
-            "factor":1,
-            "n_heads":8,
-            "d_ff":256,
-            "activation":"gelu",
-            "e_layers":neurons, # encoder layers
-            "d_layers":1,
-            "c_out":1,
-            "label_len":1, # 1?
-            "features": "S", # M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate
-            "seq_len":lookback
-        }
-
-        train_dataset = My_Dataset(train, self.config["pred_len"], lookback, self.config["seq_len"])
-        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+        x, y = sequence(train, lookback)
         if val is not None:
             extended_val = np.append(self.train[-self.lookback:], val)
-            val_dataset = My_Dataset(extended_val, self.config["pred_len"], lookback, self.config["seq_len"])
-            val_loader = DataLoader(val_dataset, batch_size=32, shuffle=True)
+            x_val, y_val = sequence(extended_val, lookback)
 
-        self.model = Transformer_Base(self.config).float()
-        
-        train_steps = len(train_loader)
-        self.criterion = nn.MSELoss()
-        model_optim = optim.Adam(self.model.parameters(), lr=1e-6)
-        scheduler = lr_scheduler.OneCycleLR(optimizer = model_optim,
-                                            steps_per_epoch = train_steps,
-                                            pct_start = 0.3,
-                                            epochs = epochs,
-                                            max_lr = 0.01)
+        self.model = Sequential()
+        self.model.add(KerasTransformer(
+            sequence_length=lookback,
+            enc_layers=neurons,
+            key_dim=256,
+            heads=4,
+            ff_dim=256,
+            mlp_units=[128, 64],
+            dropout=0.05
+        ))
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1,
+                              patience=5, min_lr=1e-9)
+        optimizer = Adam(learning_rate=1e-4)
 
-        for epoch in range(epochs):
-            train_loss = []
-            self.model.train()
-            for i, (batch_x, batch_y, x_pos, y_pos) in enumerate(train_loader):
-                batch_x = batch_x.float()
-                batch_y = batch_y.float()
+        self.model.compile(optimizer=optimizer, loss='mse')
 
-                model_optim.zero_grad()
-                dec_inp = torch.zeros_like(batch_y[:, -self.config["pred_len"]:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.config["pred_len"], :], dec_inp], dim=1).float()
-
-                outputs = self.model(batch_x, x_pos, dec_inp, y_pos, batch_y)
-                outputs = outputs[:, -self.config["pred_len"]:, 0:]
-                batch_y = batch_y[:, -self.config["pred_len"]:, 0:]
-                loss = self.criterion(outputs, batch_y)
-                train_loss.append(loss.item())
-                loss.backward()
-                model_optim.step()
-                #lr = scheduler.get_last_lr()[0]
-                #for param_group in model_optim.param_groups:
-                #    param_group['lr'] = lr
-                #scheduler.step()
-            train_loss = np.average(train_loss)
-            vali_loss = self.vali(val_loader)
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss))
-            
-        return self.model
-    
-    def vali(self, val_loader):
-        total_loss = []
-        self.model.eval()
-        with torch.no_grad():
-            for i, (batch_x, batch_y, x_pos, y_pos) in enumerate(val_loader):
-                batch_x = batch_x.float().unsqueeze(2)
-                batch_y = batch_y.float().unsqueeze(2)
-
-                dec_inp = torch.zeros_like(batch_y[:, -self.config["pred_len"]:])
-                dec_inp = torch.cat([batch_y[:, :self.config["pred_len"]], dec_inp], dim=1)
-                
-                outputs = self.model(batch_x, x_pos, dec_inp, y_pos)
-                outputs = outputs[:, -self.config["pred_len"]:, 0:]
-                batch_y = batch_y[:, -self.config["pred_len"]:, 0:]
-
-                pred = outputs.detach().cpu()
-                true = batch_y.detach().cpu()
-
-                loss = self.criterion(pred, true)
-
-                total_loss.append(loss)
-        total_loss = np.average(total_loss)
-        self.model.train()
-        return total_loss
+        if val is not None:
+            self.model.fit(x, y, validation_data=(x_val, y_val), epochs=epochs, callbacks=[reduce_lr])
+        else:
+            self.model.fit(x, y, epochs=epochs, callbacks=[reduce_lr])
 
     def predict(self, x):
-        if self.val is not None:
+        if hasattr(self, 'val'):
             extended_data = np.append(self.val[-self.lookback:], x)
         else:
             extended_data = np.append(self.train[-self.lookback:], x)
-
-        test_dataset = My_Dataset(extended_data, self.config["pred_len"], self.lookback, self.config["seq_len"])
-        test_loader = DataLoader(test_dataset, batch_size=32, shuffle=True)
-
-        outputs = []
-        self.model.eval()
-        with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
-                batch_x = batch_x.float().unsqueeze(2)
-                batch_y = batch_y.float().unsqueeze(2)
-
-                dec_inp = torch.zeros_like(batch_y[:, -self.config["pred_len"]:])
-                dec_inp = torch.cat([batch_y[:, :self.config["pred_len"]], dec_inp], dim=1)
-
-                outputs.append(self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark))
-
-        return torch.cat(outputs).numpy()
+        inp, _ = sequence(extended_data, self.lookback, 1)
+        out = self.model.predict(inp)
+        return out

@@ -5,5 +5,7 @@ __pycache__/
 venv/
 lightning_logs/
 
+sandbox.py
+
 *.csv
 *.txt

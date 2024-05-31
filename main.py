@@ -10,10 +10,9 @@ import numpy as np
 from models.gru import GRU # 2, 50
 from models.lstm import LSTM # 5, 50
 from models.ltc import LTC # 50, 100
-from models.transformer import Transformer
-from models.patchTST import PatchTST
+from models.transformer import Transformer # 3, 70
 from models.node import NODE # 5, 50
-from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
+from sklearn.preprocessing import RobustScaler
 
 keras.utils.set_random_seed(42)
 random.seed(42)
@@ -33,9 +32,10 @@ class Scaler():
     def inverse_transform(self, data):
         return data
 
-TICKER = ["GOOG"]
+TICKER = ["^N225"]
 #TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
-PERIOD = "1y"
+START = '2021-01-01'
+END ='2023-01-01'
 
 rmses = []
 maes = []
@@ -43,7 +43,8 @@ mapes = []
 r2s = []
 
 for ticker in TICKER:
-    data = repository.get_data(ticker, PERIOD)
+    #data = repository.get_data(ticker, START, END)
+    data = repository.generate_fake_data()
     scaler = RobustScaler()
 
     train, val, test = preprocessor.split(data)
@@ -53,9 +54,9 @@ for ticker in TICKER:
     scaled_test = scaler.transform(test.reshape(-1, 1))
 
     # Change model here
-    model = Transformer()
+    model = NODE()
 
-    model.fit(scaled_train, val=scaled_val, neurons=1, epochs=200)
+    model.fit(scaled_train, val=scaled_val, neurons=5, epochs=50, lookback=30)
 
     predictions = model.predict(scaled_test)
 

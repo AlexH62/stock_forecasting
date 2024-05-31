@@ -34,7 +34,7 @@ class LTC(Model):
             self.model.fit(x, y, epochs=epochs)
 
     def predict(self, x):
-        if self.val is not None:
+        if hasattr(self, 'val'):
             extended_data = np.append(self.val[-self.lookback:], x)
         else:
             extended_data = np.append(self.train[-self.lookback:], x)

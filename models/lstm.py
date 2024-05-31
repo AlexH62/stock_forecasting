@@ -46,7 +46,7 @@ class LSTM(Model):
         preds = []
         self.model.predict(np.reshape(self.train, (len(self.train), 1, 1)), batch_size=1)
 
-        if hasattr(self, "val"):
+        if hasattr(self, 'val'):
             self.model.predict(np.reshape(self.val, (len(self.val), 1, 1)), batch_size=1)
 
         # Predict stepwise
