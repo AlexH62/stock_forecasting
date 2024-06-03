@@ -4,14 +4,16 @@ from preprocessor import sequence
 import numpy as np
 from ncps import wirings
 from ncps.tf import LTC, CfC
-from keras import Sequential
-from keras import layers
+from keras.models import Sequential
+from keras.layers import InputLayer
+from keras.optimizers import Adam
+from keras.callbacks import ReduceLROnPlateau, EarlyStopping
 
 class LTC(Model):
     def __init__(self):
         self.name = "LTC"
 
-    def fit(self, train, val=None, neurons=10, epochs=200, lookback=30):
+    def fit(self, train, val=None, depth=10, epochs=200, lookback=30):
         self.train = train
         self.val = val
         self.lookback = lookback
@@ -21,17 +23,42 @@ class LTC(Model):
             extended_val = np.append(self.train[-self.lookback:], val)
             x_val, y_val = sequence(extended_val, lookback)
         
-        wiring = wirings.AutoNCP(neurons, 1)
+        wiring = wirings.AutoNCP(depth, 1)
 
         self.model = Sequential()
-        self.model.add(layers.InputLayer(input_shape=(None, x.shape[2])))
+        self.model.add(InputLayer(input_shape=(None, x.shape[2])))
         self.model.add(CfC(wiring))
-        self.model.compile(optimizer="adam", loss='mse')
+
+        optimizer = Adam(learning_rate=1e-3)
+
+        self.model.compile(optimizer=optimizer, loss='mse')
 
         if val is not None:
-            self.model.fit(x, y, validation_data=(x_val, y_val), epochs=epochs)
+            reduce_lr = ReduceLROnPlateau(
+                            monitor='val_loss',
+                            factor=0.1,
+                            patience=5, 
+                            min_lr=1e-9
+                        )
+            early_stopping = EarlyStopping(
+                                monitor='val_loss',
+                                min_delta=0,
+                                patience=10
+                            )
+            self.model.fit(x, y, validation_data=(x_val, y_val), epochs=epochs, callbacks=[reduce_lr, early_stopping])
         else:
-            self.model.fit(x, y, epochs=epochs)
+            reduce_lr = ReduceLROnPlateau(
+                            monitor='loss',
+                            factor=0.1,
+                            patience=5, 
+                            min_lr=1e-9
+                        )
+            early_stopping = EarlyStopping(
+                                monitor='loss',
+                                min_delta=0,
+                                patience=10
+                            )
+            self.model.fit(x, y, epochs=epochs, callbacks=[reduce_lr, early_stopping])
 
     def predict(self, x):
         if hasattr(self, 'val'):

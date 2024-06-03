@@ -6,7 +6,7 @@ from keras.backend import bias_add
 from keras.layers import Layer, MultiHeadAttention, Conv1D, LayerNormalization, Dropout, Dense, GlobalAveragePooling1D
 from keras.activations import leaky_relu
 from keras.optimizers import Adam
-from keras.callbacks import ReduceLROnPlateau
+from keras.callbacks import ReduceLROnPlateau, EarlyStopping
 from keras.models import Sequential, Model as KerasModel
 
 class PositionalEmbedding(Layer):
@@ -87,7 +87,7 @@ class Transformer(Model):
     def __init__(self):
         self.name = "Transformer"
 
-    def fit(self, train, val=None, neurons=10, epochs=200, lookback=30):
+    def fit(self, train, val=None, depth=10, epochs=200, lookback=30):
         self.train = train
         self.lookback = lookback
         if val is not None:
@@ -101,23 +101,44 @@ class Transformer(Model):
         self.model = Sequential()
         self.model.add(KerasTransformer(
             sequence_length=lookback,
-            enc_layers=neurons,
+            enc_layers=depth,
             key_dim=256,
             heads=4,
             ff_dim=256,
             mlp_units=[128, 64],
             dropout=0.05
         ))
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1,
-                              patience=5, min_lr=1e-9)
+
         optimizer = Adam(learning_rate=1e-4)
 
         self.model.compile(optimizer=optimizer, loss='mse')
 
         if val is not None:
-            self.model.fit(x, y, validation_data=(x_val, y_val), epochs=epochs, callbacks=[reduce_lr])
+            reduce_lr = ReduceLROnPlateau(
+                            monitor='val_loss',
+                            factor=0.1,
+                            patience=5, 
+                            min_lr=1e-9
+                        )
+            early_stopping = EarlyStopping(
+                                monitor='val_loss',
+                                min_delta=0,
+                                patience=10
+                            )
+            self.model.fit(x, y, validation_data=(x_val, y_val), epochs=epochs, callbacks=[reduce_lr, early_stopping])
         else:
-            self.model.fit(x, y, epochs=epochs, callbacks=[reduce_lr])
+            reduce_lr = ReduceLROnPlateau(
+                            monitor='loss',
+                            factor=0.1,
+                            patience=5, 
+                            min_lr=1e-9
+                        )
+            early_stopping = EarlyStopping(
+                                monitor='loss',
+                                min_delta=0,
+                                patience=10
+                            )
+            self.model.fit(x, y, epochs=epochs, callbacks=[reduce_lr, early_stopping])
 
     def predict(self, x):
         if hasattr(self, 'val'):

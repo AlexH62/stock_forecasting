@@ -3,23 +3,20 @@ import preprocessor
 import metrics
 
 import random
-import torch
 import warnings
 import keras
+import tensorflow as tf
 import numpy as np
-from models.gru import GRU # 2, 50
-from models.lstm import LSTM # 5, 50
+from models.gru import GRU # 2
+from models.lstm import LSTM # 5
 from models.ltc import LTC # 50, 100
-from models.transformer import Transformer # 3, 70
-from models.node import NODE # 5, 50
+from models.transformer import Transformer # 3
+from models.node import NODE # 1
 from sklearn.preprocessing import RobustScaler
 
 keras.utils.set_random_seed(42)
 random.seed(42)
-torch.manual_seed(42)
 np.random.seed(42)
-
-warnings.filterwarnings('ignore')
 
 class Scaler():
     def __init__(self):
@@ -32,8 +29,8 @@ class Scaler():
     def inverse_transform(self, data):
         return data
 
-TICKER = ["^N225"]
-#TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
+#TICKER = ["^N225"]
+TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 START = '2021-01-01'
 END ='2023-01-01'
 
@@ -43,8 +40,8 @@ mapes = []
 r2s = []
 
 for ticker in TICKER:
-    #data = repository.get_data(ticker, START, END)
-    data = repository.generate_fake_data()
+    data = repository.get_data(ticker, START, END)
+    #data = repository.generate_fake_data()
     scaler = RobustScaler()
 
     train, val, test = preprocessor.split(data)
@@ -54,9 +51,9 @@ for ticker in TICKER:
     scaled_test = scaler.transform(test.reshape(-1, 1))
 
     # Change model here
-    model = NODE()
+    model = Transformer()
 
-    model.fit(scaled_train, val=scaled_val, neurons=5, epochs=50, lookback=30)
+    model.fit(scaled_train, val=scaled_val, depth=3, lookback=30, epochs=200)
 
     predictions = model.predict(scaled_test)
 

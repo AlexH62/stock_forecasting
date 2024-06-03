@@ -1,14 +1,16 @@
 from models.model import Model
 
+import sys
 import numpy as np
 from keras.models import Sequential
-import keras.layers
+from keras.layers import Dense, LSTM as KerasLSTM
+from keras.optimizers import Adam
 
 class LSTM(Model):
     def __init__(self):
         self.name = "LSTM"
 
-    def fit(self, train, val=None, neurons=10, epochs=200):
+    def fit(self, train, val=None, depth=10, epochs=200, lookback=30):
         batch_size = 1
         self.train = train
 
@@ -25,18 +27,42 @@ class LSTM(Model):
             y_val = np.reshape(y_val, (len(y_val), 1, 1))
 
         self.model = Sequential()
-        self.model.add(keras.layers.LSTM(neurons, batch_input_shape=(batch_size, x.shape[1], x.shape[2]), stateful=True))
-        self.model.add(keras.layers.Dense(y.shape[1]))
-        self.model.compile(optimizer="adam", loss='mse')
+        self.model.add(KerasLSTM(depth, batch_input_shape=(batch_size, x.shape[1], x.shape[2]), stateful=True))
+        self.model.add(Dense(y.shape[1]))
+        optimizer = Adam(learning_rate=1e-3)
 
+        self.model.compile(optimizer=optimizer, loss='mse')
+
+        early_stoping_counter = 0
+        lowest_loss = sys.maxsize
         if val is not None:
             for i in range(epochs):
-                self.model.fit(x, y, validation_data=(x_val, y_val), epochs=1, batch_size=batch_size, shuffle=False)
+                print(f'Epoch {i+1}/{epochs}')
+                history = self.model.fit(x, y, validation_data=(x_val, y_val), epochs=1, batch_size=batch_size, shuffle=False)
+                val_loss = history.history['val_loss'][0]
                 self.model.reset_states()
+                if val_loss < lowest_loss:
+                    lowest_loss = val_loss
+                    early_stoping_counter = 0
+                else:
+                    early_stoping_counter += 1
+                if early_stoping_counter == 20:
+                    print('Early stopping condition met')
+                    break
         else:
             for i in range(epochs):
+                print(f'Epoch {i+1}/{epochs}')
                 self.model.fit(x, y, epochs=1, batch_size=batch_size, shuffle=False)
+                loss = history.history['loss'][0]
                 self.model.reset_states()
+                if loss <= lowest_loss:
+                    lowest_loss = loss
+                    early_stoping_counter = 0
+                else:
+                    early_stoping_counter += 1
+                if early_stoping_counter == 20:
+                    print('Early stopping condition met')
+                    break
     
     def predict(self, data):
         # Check training has been done
