@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+# Abstract base class for our models to implement, used to make training and testing smoother
 class Model(ABC):
     def __init__(self):
         pass

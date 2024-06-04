@@ -2,11 +2,12 @@ from models.model import Model
 from preprocessor import sequence
 
 import numpy as np
+import tensorflow as tf
 from keras import Model as KerasModel
 from keras.layers import Layer, Dense, LeakyReLU
 from keras.optimizers import Adam
 from keras.callbacks import ReduceLROnPlateau, EarlyStopping
-from tensorflow_probability.python.math.ode import DormandPrince, BDF
+from tensorflow_probability.python.math.ode import DormandPrince
 
 class ODEFunc(Layer):
     def __init__(self, hidden_dim, lookback):
@@ -25,31 +26,35 @@ class ODEFunc(Layer):
         return self.dense3(y)
     
 class ODEBlock(KerasModel):
-    def __init__(self, odefunc, tol=1e-3):
+    def __init__(self, odefunc, augment_dim, tol=1e-3):
         super(ODEBlock, self).__init__()
 
+        self.augment_dim = augment_dim
         self.odefunc = odefunc
         self.tol = tol
-        self.solver = DormandPrince()
+        self.solver = DormandPrince(max_num_steps=1000)
 
     def call(self, y0):
+        aug = tf.zeros_like(y0)
+        aug = aug[:, :, :self.augment_dim]
+        y0_aug = tf.concat([y0, aug], axis=-1)
         out = self.solver.solve(
             self.odefunc, 
             initial_time=0.,
-            initial_state=y0,
+            initial_state=y0_aug,
             solution_times=[1.]
         )
         return out.states[-1]
 
 class ODENet(KerasModel):
-    def __init__(self, hidden_dim, lookback, output_dim, depth, tol=1e-3):
+    def __init__(self, hidden_dim, lookback, output_dim, depth, augment_dim, tol=1e-3):
         super(ODENet, self).__init__()
-
+        assert augment_dim < lookback
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         self.tol = tol
 
-        self.odeblocks = [ODEBlock(ODEFunc(hidden_dim, lookback), tol=tol) for _ in range(depth)]
+        self.odeblocks = [ODEBlock(ODEFunc(hidden_dim, lookback + augment_dim), augment_dim=augment_dim, tol=tol) for _ in range(depth)]
         self.linear_layer = Dense(self.output_dim)
 
     def call(self, y0, training=None):
@@ -59,9 +64,9 @@ class ODENet(KerasModel):
 
         return self.linear_layer(x)
 
-class NODE(Model):
+class ANODE(Model):
     def __init__(self):
-        self.name = "NODE"
+        self.name = "ANODE"
 
     def fit(self, train, val=None, depth=10, epochs=200, lookback=30):
         self.train = train
@@ -80,6 +85,7 @@ class NODE(Model):
         self.model = ODENet(
             hidden_dim=1024,
             depth=depth,
+            augment_dim=5,
             lookback=lookback,
             output_dim=1
         )

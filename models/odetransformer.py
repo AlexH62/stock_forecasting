@@ -1,55 +1,38 @@
 from models.model import Model
+from models.anode import ODEBlock
 from preprocessor import sequence
 
 import numpy as np
 from keras import Model as KerasModel
-from keras.layers import Layer, Dense, LeakyReLU
+from keras.layers import Layer, MultiHeadAttention, Conv1D, LayerNormalization, Dropout, Dense, GlobalAveragePooling1D
+from keras.activations import leaky_relu
 from keras.optimizers import Adam
 from keras.callbacks import ReduceLROnPlateau, EarlyStopping
-from tensorflow_probability.python.math.ode import DormandPrince, BDF
+from tensorflow_probability.python.math.ode import DormandPrince
 
-class ODEFunc(Layer):
-    def __init__(self, hidden_dim, lookback):
-        super(ODEFunc, self).__init__()
-        self.dense1 = Dense(hidden_dim)
-        self.dense2 = Dense(hidden_dim)
-        self.dense3 = Dense(lookback)
-        self.activation = LeakyReLU()
+class TransformerODEFunc(Layer):
+    def __init__(self, heads=4, key_dim=256, lookback=30, dropout=0.05):
+        super(TransformerODEFunc, self).__init__()
+        self.attn = MultiHeadAttention(heads, key_dim, dropout=dropout)
+        self.attn_norm = LayerNormalization(epsilon=1e-6)
+        self.ff = Conv1D(filters=lookback, kernel_size=1, activation=leaky_relu)
 
     # t in signature here required for solver
-    def call(self, t, y):
-        y = self.dense1(y)
-        y = self.activation(y)
-        y = self.dense2(y)
-        y = self.activation(y)
-        return self.dense3(y)
+    def call(self, t, y, training=None):
+        x = self.attn_norm(y)
+        x = self.attn(query=x, key=x, value=x, training=training)
+        x = self.ff(x)
+
+        return x
     
-class ODEBlock(KerasModel):
-    def __init__(self, odefunc, tol=1e-3):
-        super(ODEBlock, self).__init__()
-
-        self.odefunc = odefunc
-        self.tol = tol
-        self.solver = DormandPrince()
-
-    def call(self, y0):
-        out = self.solver.solve(
-            self.odefunc, 
-            initial_time=0.,
-            initial_state=y0,
-            solution_times=[1.]
-        )
-        return out.states[-1]
-
 class ODENet(KerasModel):
-    def __init__(self, hidden_dim, lookback, output_dim, depth, tol=1e-3):
+    def __init__(self, lookback, output_dim, depth, augment_dim=0, tol=1e-3):
         super(ODENet, self).__init__()
 
-        self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         self.tol = tol
 
-        self.odeblocks = [ODEBlock(ODEFunc(hidden_dim, lookback), tol=tol) for _ in range(depth)]
+        self.odeblocks = [ODEBlock(TransformerODEFunc(lookback=lookback + augment_dim), augment_dim=augment_dim, tol=tol) for _ in range(depth)]
         self.linear_layer = Dense(self.output_dim)
 
     def call(self, y0, training=None):
@@ -58,10 +41,10 @@ class ODENet(KerasModel):
             x = layer(x)
 
         return self.linear_layer(x)
-
-class NODE(Model):
+    
+class ODETransformer(Model):
     def __init__(self):
-        self.name = "NODE"
+        self.name = "ODETransformer"
 
     def fit(self, train, val=None, depth=10, epochs=200, lookback=30):
         self.train = train
@@ -78,8 +61,8 @@ class NODE(Model):
             y_val = np.expand_dims(y_val, axis=1)
 
         self.model = ODENet(
-            hidden_dim=1024,
             depth=depth,
+            augment_dim=0,
             lookback=lookback,
             output_dim=1
         )
@@ -112,8 +95,7 @@ class NODE(Model):
             early_stopping = EarlyStopping(
                                 monitor='loss',
                                 min_delta=0,
-                                patience=20,
-                                restore_best_weights=True
+                                patience=20
                             )
             self.model.fit(x, y, epochs=epochs, callbacks=[reduce_lr, early_stopping])
 

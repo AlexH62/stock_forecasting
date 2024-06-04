@@ -3,7 +3,6 @@ import preprocessor
 import metrics
 
 import random
-import warnings
 import keras
 import tensorflow as tf
 import numpy as np
@@ -12,6 +11,8 @@ from models.lstm import LSTM # 5
 from models.ltc import LTC # 50, 100
 from models.transformer import Transformer # 3
 from models.node import NODE # 1
+from models.anode import ANODE # 1
+from models.odetransformer import ODETransformer # 1
 from sklearn.preprocessing import RobustScaler
 
 keras.utils.set_random_seed(42)
@@ -29,8 +30,9 @@ class Scaler():
     def inverse_transform(self, data):
         return data
 
-#TICKER = ["^N225"]
-TICKER = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
+TICKERS = ["IBM"]
+#TICKERS = ["^N225"]
+#TICKERS = ["NVDA", "IBM", "AAPL", "NFLX", "GOOG", "GS", "JPM", "BCS", "SAN", "MS"]
 START = '2021-01-01'
 END ='2023-01-01'
 
@@ -39,9 +41,9 @@ maes = []
 mapes = []
 r2s = []
 
-for ticker in TICKER:
-    data = repository.get_data(ticker, START, END)
-    #data = repository.generate_fake_data()
+for ticker in TICKERS:
+    #data = repository.get_data(ticker, START, END)
+    data = repository.generate_fake_data()
     scaler = RobustScaler()
 
     train, val, test = preprocessor.split(data)
@@ -51,9 +53,9 @@ for ticker in TICKER:
     scaled_test = scaler.transform(test.reshape(-1, 1))
 
     # Change model here
-    model = Transformer()
+    model = LSTM()
 
-    model.fit(scaled_train, val=scaled_val, depth=3, lookback=30, epochs=200)
+    model.fit(scaled_train, val=scaled_val, depth=1, lookback=30, epochs=200)
 
     predictions = model.predict(scaled_test)
 
@@ -74,6 +76,6 @@ for ticker in TICKER:
 
 file = open("dump.csv", "a")
 file.write(model.name + ",MAE,MAPE,RMSE,R2\n")
-for i, ticker in enumerate(TICKER):
+for i, ticker in enumerate(TICKERS):
     file.write(ticker + "," + str(round(maes[i], 4)) + "," + str(round(mapes[i], 4)) + "," + str(round(rmses[i], 4)) + "," + str(round(r2s[i], 4)) + "\n")
 file.close()
