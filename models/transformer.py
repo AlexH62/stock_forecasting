@@ -1,13 +1,12 @@
 from models.model import Model
-from preprocessor import sequence
+from utils import sequence
 
 import numpy as np
-from keras.backend import bias_add
-from keras.layers import Layer, MultiHeadAttention, Conv1D, LayerNormalization, Dropout, Dense, GlobalAveragePooling1D
-from keras.activations import leaky_relu
-from keras.optimizers import Adam
-from keras.callbacks import ReduceLROnPlateau, EarlyStopping
-from keras.models import Sequential, Model as KerasModel
+from keras.api.layers import Layer, MultiHeadAttention, Conv1D, LayerNormalization, Dropout, Dense, GlobalAveragePooling1D
+from keras.api.activations import leaky_relu
+from keras.api.optimizers import Adam
+from keras.api.callbacks import ReduceLROnPlateau, EarlyStopping
+from keras.api.models import Sequential, Model as KerasModel
 
 class PositionalEmbedding(Layer):
     def __init__(self, length):
@@ -24,7 +23,7 @@ class PositionalEmbedding(Layer):
         self.built = True
     
     def call(self, inputs):
-        return bias_add(inputs, self.position_embeddings)
+        return inputs + self.position_embeddings
 
 class TransformerEncoder(Layer):
     def __init__(self, heads, key_dim, ff_dim, dropout):
@@ -71,11 +70,11 @@ class KerasTransformer(KerasModel):
         self.pool = GlobalAveragePooling1D(data_format="channels_first")
         self.output_ff = Dense(1)
 
-    def call(self, inputs):
+    def call(self, inputs, training=None):
         encoded =  self.pos_emb(inputs)
 
         for layer in self.encoders:
-            encoded = layer(encoded)
+            encoded = layer(encoded, training=training)
 
         x = self.pool(encoded)
         for layer in self.ffs:
@@ -87,16 +86,17 @@ class Transformer(Model):
     def __init__(self):
         self.name = "Transformer"
 
-    def fit(self, train, val=None, depth=10, epochs=200, lookback=30):
+    def fit(self, train, val=None, depth=10, epochs=200, lookback=30, horizon=1):
         self.train = train
         self.lookback = lookback
+        self.horizon = horizon
         if val is not None:
             self.val = val
 
-        x, y = sequence(train, lookback)
+        x, y = sequence(train, lookback, horizon=horizon)
         if val is not None:
-            extended_val = np.append(self.train[-self.lookback:], val)
-            x_val, y_val = sequence(extended_val, lookback)
+            extended_val = np.append(self.train[-self.lookback-self.horizon+1:], val)
+            x_val, y_val = sequence(extended_val, lookback, horizon=horizon)
 
         self.model = Sequential()
         self.model.add(KerasTransformer(
@@ -109,7 +109,7 @@ class Transformer(Model):
             dropout=0.05
         ))
 
-        optimizer = Adam(learning_rate=1e-4)
+        optimizer = Adam(learning_rate=1e-3)
 
         self.model.compile(optimizer=optimizer, loss='mse')
 
@@ -125,7 +125,7 @@ class Transformer(Model):
                                 min_delta=0,
                                 patience=10
                             )
-            self.model.fit(x, y, validation_data=(x_val, y_val), epochs=epochs, callbacks=[reduce_lr, early_stopping])
+            self.model.fit(x, y, validation_data=(x_val, y_val), epochs=epochs, batch_size=16, callbacks=[reduce_lr, early_stopping])
         else:
             reduce_lr = ReduceLROnPlateau(
                             monitor='loss',
@@ -138,13 +138,6 @@ class Transformer(Model):
                                 min_delta=0,
                                 patience=10
                             )
-            self.model.fit(x, y, epochs=epochs, callbacks=[reduce_lr, early_stopping])
-
-    def predict(self, x):
-        if hasattr(self, 'val'):
-            extended_data = np.append(self.val[-self.lookback:], x)
-        else:
-            extended_data = np.append(self.train[-self.lookback:], x)
-        inp, _ = sequence(extended_data, self.lookback, 1)
-        out = self.model.predict(inp)
-        return out
+            self.model.fit(x, y, epochs=epochs, batch_size=16, callbacks=[reduce_lr, early_stopping])
+        
+        self.model.summary()

@@ -1,14 +1,16 @@
 from models.model import Model
-from preprocessor import sequence
+from utils import sequence
 
 import numpy as np
 from ncps import wirings
-from ncps.tf import LTC, CfC
-from keras.models import Sequential
-from keras.layers import InputLayer
-from keras.optimizers import Adam
-from keras.callbacks import ReduceLROnPlateau, EarlyStopping
+from ncps.tf import LTC
+from keras.api.models import Sequential
+from keras.api.layers import InputLayer
+from keras.api.optimizers import Adam
+from keras.api.callbacks import ReduceLROnPlateau, EarlyStopping
 
+
+# This class is not used in the final report and was part of exploratory analysis
 class LTC(Model):
     def __init__(self):
         self.name = "LTC"
@@ -27,7 +29,7 @@ class LTC(Model):
 
         self.model = Sequential()
         self.model.add(InputLayer(input_shape=(None, x.shape[2])))
-        self.model.add(CfC(wiring))
+        self.model.add(LTC(wiring))
 
         optimizer = Adam(learning_rate=1e-3)
 
@@ -59,11 +61,3 @@ class LTC(Model):
                                 patience=10
                             )
             self.model.fit(x, y, epochs=epochs, callbacks=[reduce_lr, early_stopping])
-
-    def predict(self, x):
-        if hasattr(self, 'val'):
-            extended_data = np.append(self.val[-self.lookback:], x)
-        else:
-            extended_data = np.append(self.train[-self.lookback:], x)
-        inp, _ = sequence(extended_data, self.lookback, 1)
-        return self.model.predict(inp)

@@ -1,12 +1,12 @@
 from models.model import Model
-from preprocessor import sequence
+from utils import sequence
 
 import numpy as np
 import tensorflow as tf
 from keras import Model as KerasModel
-from keras.layers import Layer, Dense, LeakyReLU
-from keras.optimizers import Adam
-from keras.callbacks import ReduceLROnPlateau, EarlyStopping
+from keras.api.layers import Layer, Dense, LeakyReLU
+from keras.api.optimizers import Adam
+from keras.api.callbacks import ReduceLROnPlateau, EarlyStopping
 from tensorflow_probability.python.math.ode import DormandPrince
 
 class ODEFunc(Layer):
@@ -68,17 +68,18 @@ class ANODE(Model):
     def __init__(self):
         self.name = "ANODE"
 
-    def fit(self, train, val=None, depth=10, epochs=200, lookback=30):
+    def fit(self, train, val=None, depth=10, epochs=200, lookback=30, horizon=1):
         self.train = train
-        self.val = val
         self.lookback = lookback
+        self.horizon = horizon
         
-        x, y = sequence(train, lookback)
+        x, y = sequence(train, lookback, horizon=horizon)
         x = np.expand_dims(x.squeeze(), axis=1)
         y = np.expand_dims(y, axis=1)
         if val is not None:
-            extended_val = np.append(self.train[-self.lookback:], val)
-            x_val, y_val = sequence(extended_val, lookback)
+            self.val = val
+            extended_val = np.append(self.train[-self.lookback-self.horizon+1:], val)
+            x_val, y_val = sequence(extended_val, lookback, horizon=horizon)
             x_val = np.expand_dims(x_val.squeeze(), axis=1)
             y_val = np.expand_dims(y_val, axis=1)
 
@@ -123,12 +124,15 @@ class ANODE(Model):
                             )
             self.model.fit(x, y, epochs=epochs, callbacks=[reduce_lr, early_stopping])
 
-    def predict(self, data):
-        if self.val is not None:
-            extended_data = np.append(self.val[-self.lookback:], data)
+        self.model.summary()
+
+    def predict(self, x):
+        if hasattr(self, 'val'):
+            pre_data = np.append(self.train, self.val)
         else:
-            extended_data = np.append(self.train[-self.lookback:], data)
-        inp, _ = sequence(extended_data, self.lookback, 1)
+            pre_data = self.train
+        extended_data = np.append(pre_data[-self.lookback-self.horizon+1:], x)
+        inp, _ = sequence(extended_data, self.lookback, self.horizon)
         inp = np.expand_dims(inp.squeeze(), axis=1)
         
         return self.model(inp, training=False).numpy()

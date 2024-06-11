@@ -1,13 +1,15 @@
 import yfinance
 import numpy as np
 
-def get_data(ticker, start='2021-01-01', end='2023-01-01', interval='1d'):
-   info = yfinance.Ticker(ticker)
+def get_data(ticker, start='2021-01-01', end='2023-01-01', interval='1d', diff=False):
+    info = yfinance.Ticker(ticker)
 
-   # Valid periods are 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, and max.
-   data = info.history(start=start, end=end, interval=interval)
-   data =  data['Close']
-   return data.to_numpy()
+    # Valid periods are 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, and max.
+    data = info.history(start=start, end=end, interval=interval)
+    data = data['Close'].to_numpy()
+    if diff:
+        return np.diff(data), data
+    return data
 
 # Useful utility to ensure models are working as expected
 def generate_fake_data(length=300, mean=20, std_dev=2, trend=0.01, seasonality_amp=10, seasonality_period=50):
