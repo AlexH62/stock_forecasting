@@ -2,6 +2,7 @@ import repository
 import utils
 import metrics
 
+import argparse
 from arch import arch_model
 import pmdarima
 import numpy as np
@@ -9,8 +10,13 @@ import numpy as np
 TICKERS = ['NVDA', 'IBM', 'AAPL', 'NFLX', 'GOOG', 'GS', 'JPM', 'BCS', 'SAN', 'MS']
 START = '2021-01-01'
 END = '2023-01-01'
-HORIZON = 1
 LOOKBACK = 60
+
+parser = argparse.ArgumentParser("GARCH benchmark")
+parser.add_argument("horizon", help="Forecasting horizon", type=int)
+args = parser.parse_args()
+
+HORIZON = args.horizon
 
 rmses = []
 maes = []

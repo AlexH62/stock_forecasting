@@ -15,13 +15,15 @@ from sklearn.preprocessing import RobustScaler
 TICKERS = ['NVDA', 'IBM', 'AAPL', 'NFLX', 'GOOG', 'GS', 'JPM', 'BCS', 'SAN', 'MS']
 START = '2021-01-01'
 END = '2023-01-01'
-HORIZON = 10
 
 parser = argparse.ArgumentParser("Model training")
 parser.add_argument("model_type", help="Model type to use. Options are lstm, gru, transformer, node, anode, odetransformer", type=str)
 parser.add_argument("depth", help="Number of repeated modules to use", type=int)
 parser.add_argument("epochs", help="Maximum number of epochs", type=int)
+parser.add_argument("horizon", help="Forecasting horizon", type=int)
 args = parser.parse_args()
+
+HORIZON = args.horizon
 
 rmses = []
 maes = []
