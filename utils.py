@@ -11,19 +11,18 @@ def split(data, validation=True):
     
     return data[:val_idx], data[val_idx:]
 
-def sequence(data, lookback, horizon=1):
+def sequence(data, lookback=60, horizon=1):
     x, y = [], []
+    i = 0
+    end_idx = lookback
+    y_idx = end_idx + horizon - 1
 
-    for i in range(len(data)):
-        end_ix = i + lookback
-        y_ix = end_ix + horizon - 1
-        
-        if y_ix > len(data)-1:
-            break
-        
-        seq_x, seq_y = data[i:end_ix], data[y_ix]
-        x.append(seq_x)
-        y.append(seq_y)
+    while y_idx < len(data):
+        x.append(data[i:end_idx])
+        y.append(data[y_idx])
+        end_idx += 1
+        y_idx += 1
+        i += 1
 
     x, y = np.array(x), np.array(y)
     x = x.reshape((x.shape[0], x.shape[1], 1))

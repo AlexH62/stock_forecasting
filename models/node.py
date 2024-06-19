@@ -6,7 +6,7 @@ from keras import Model as KerasModel
 from keras.api.layers import Layer, Dense, LeakyReLU
 from keras.api.optimizers import Adam
 from keras.api.callbacks import ReduceLROnPlateau, EarlyStopping
-from tensorflow_probability.python.math.ode import DormandPrince, BDF
+from tensorflow_probability.python.math.ode import DormandPrince
 
 class ODEFunc(Layer):
     def __init__(self, hidden_dim, lookback):

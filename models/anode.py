@@ -1,4 +1,5 @@
 from models.model import Model
+from models.node import ODEFunc
 from utils import sequence
 
 import numpy as np
@@ -8,22 +9,6 @@ from keras.api.layers import Layer, Dense, LeakyReLU
 from keras.api.optimizers import Adam
 from keras.api.callbacks import ReduceLROnPlateau, EarlyStopping
 from tensorflow_probability.python.math.ode import DormandPrince
-
-class ODEFunc(Layer):
-    def __init__(self, hidden_dim, lookback):
-        super(ODEFunc, self).__init__()
-        self.dense1 = Dense(hidden_dim)
-        self.dense2 = Dense(hidden_dim)
-        self.dense3 = Dense(lookback)
-        self.activation = LeakyReLU()
-
-    # t in signature here required for solver
-    def call(self, t, y):
-        y = self.dense1(y)
-        y = self.activation(y)
-        y = self.dense2(y)
-        y = self.activation(y)
-        return self.dense3(y)
     
 class ODEBlock(KerasModel):
     def __init__(self, odefunc, augment_dim, tol=1e-3):

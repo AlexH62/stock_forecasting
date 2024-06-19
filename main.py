@@ -2,6 +2,7 @@ import repository
 import utils
 import metrics
 
+import argparse
 import numpy as np
 from models.gru import GRU
 from models.lstm import LSTM
@@ -15,6 +16,12 @@ TICKERS = ['NVDA', 'IBM', 'AAPL', 'NFLX', 'GOOG', 'GS', 'JPM', 'BCS', 'SAN', 'MS
 START = '2021-01-01'
 END = '2023-01-01'
 HORIZON = 10
+
+parser = argparse.ArgumentParser("Model training")
+parser.add_argument("model_type", help="Model type to use. Options are lstm, gru, transformer, node, anode, odetransformer", type=str)
+parser.add_argument("depth", help="Number of repeated modules to use", type=int)
+parser.add_argument("epochs", help="Maximum number of epochs", type=int)
+args = parser.parse_args()
 
 rmses = []
 maes = []
@@ -30,10 +37,21 @@ for ticker in TICKERS:
     scaled_val = scaler.transform(val.reshape(-1, 1))
     scaled_test = scaler.transform(test.reshape(-1, 1))
 
-    # Change model here
-    model = ODETransformer()
+    match args.model_type:
+        case "lstm":
+            model = LSTM()
+        case "gru":
+            model = GRU()
+        case "transformer":
+            model = Transformer()
+        case "node":
+            model = NODE()
+        case "anode":
+            model = ANODE()
+        case "odetransformer":
+            model = ODETransformer()
 
-    model.fit(scaled_train, val=scaled_val, depth=1, lookback=60, epochs=200, horizon=HORIZON)
+    model.fit(scaled_train, val=scaled_val, depth=args.depth, lookback=60, epochs=args.epochs, horizon=HORIZON)
 
     predictions = model.predict(scaled_test)
 
